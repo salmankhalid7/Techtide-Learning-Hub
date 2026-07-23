@@ -172,9 +172,8 @@ moduleSchema.virtual("isReleased").get(function () {
  */
 
 // Exclude soft-deleted modules from all find queries
-moduleSchema.pre(/^find/, function (next) {
+moduleSchema.pre(/^find/, function () {
     this.where({ deletedAt: null });
-    next();
 });
 
 /**

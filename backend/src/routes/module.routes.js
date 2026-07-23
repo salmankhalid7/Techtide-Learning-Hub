@@ -23,67 +23,6 @@ import validate from "../middlewares/validation.middleware.js";
 
 const router = Router();
 
-
-/**
- * Teacher/Admin Module Management
- */
-
-// Create Module
-router.post(
-    "/",
-    authenticate,
-    authorize("teacher", "admin"),
-    createModuleValidator,
-    validate,
-    createModuleController
-);
-
-
-// Update Module
-router.patch(
-    "/:moduleId",
-    authenticate,
-    authorize("teacher", "admin"),
-    updateModuleValidator,
-    validate,
-    updateModuleController
-);
-
-
-// Publish Module
-router.patch(
-    "/:moduleId/publish",
-    authenticate,
-    authorize("teacher", "admin"),
-    moduleIdValidator,
-    validate,
-    publishModuleController
-);
-
-
-// Archive Module
-router.patch(
-    "/:moduleId/archive",
-    authenticate,
-    authorize("teacher", "admin"),
-    moduleIdValidator,
-    validate,
-    archiveModuleController
-);
-
-
-// Delete Module
-router.delete(
-    "/:moduleId",
-    authenticate,
-    authorize("teacher", "admin"),
-    moduleIdValidator,
-    validate,
-    deleteModuleController
-);
-
-
-
 /**
  * Public / Student Access
  */
@@ -99,6 +38,63 @@ router.get(
 router.get(
     "/course/:courseId",
     getCourseModulesController
+);
+
+
+/**
+ * Teacher/Admin Module Management
+ *
+ * All routes below require authentication.
+ */
+router.use(authenticate);
+
+// Create Module
+router.post(
+    "/",
+    authorize("instructor", "admin"),
+    ...createModuleValidator,
+    validate,
+    createModuleController
+);
+
+
+// Update Module
+router.patch(
+    "/:moduleId",
+    authorize("instructor", "admin"),
+    ...updateModuleValidator,
+    validate,
+    updateModuleController
+);
+
+
+// Publish Module
+router.patch(
+    "/:moduleId/publish",
+    authorize("instructor", "admin"),
+    ...moduleIdValidator,
+    validate,
+    publishModuleController
+);
+
+
+// Archive Module
+router.patch(
+    "/:moduleId/archive",
+    authorize("instructor", "admin"),
+    ...moduleIdValidator,
+    validate,
+    archiveModuleController
+);
+
+
+// Delete Module
+router.delete(
+    "/:moduleId",
+    authorize("instructor", "admin"),
+    ...moduleIdValidator,
+    validate,
+    deleteModuleController
 );
 
 
