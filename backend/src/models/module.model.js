@@ -144,7 +144,38 @@ moduleSchema.index({ releaseAt: 1 });
 
 // Improve soft-delete queries
 moduleSchema.index({ deletedAt: 1 });
+/**
+ * -------------------------------------------------------
+ * Virtual Properties
+ * -------------------------------------------------------
+ */
 
+moduleSchema.virtual("isPublished").get(function () {
+    return this.status === "published";
+});
+
+moduleSchema.virtual("isArchived").get(function () {
+    return this.status === "archived";
+});
+
+moduleSchema.virtual("isDeleted").get(function () {
+    return this.deletedAt !== null;
+});
+
+moduleSchema.virtual("isReleased").get(function () {
+    return !this.releaseAt || this.releaseAt <= new Date();
+});
+/**
+ * -------------------------------------------------------
+ * Query Middleware
+ * -------------------------------------------------------
+ */
+
+// Exclude soft-deleted modules from all find queries
+moduleSchema.pre(/^find/, function (next) {
+    this.where({ deletedAt: null });
+    next();
+});
 const Module = mongoose.model("Module", moduleSchema);
 
 export default Module;
