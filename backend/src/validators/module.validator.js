@@ -101,3 +101,38 @@ export const moduleIdValidator = [
     param("moduleId")
         .custom(objectIdRule),
 ];
+
+/**
+ * Validate module reorder request
+ */
+export const reorderModuleValidator = [
+    body("courseId")
+        .notEmpty()
+        .withMessage("Course ID is required")
+        .bail()
+        .custom(objectIdRule),
+
+
+    body("modules")
+        .isArray({ min: 1 })
+        .withMessage(
+            "Modules must be a non-empty array"
+        ),
+
+
+    body("modules.*.moduleId")
+        .notEmpty()
+        .withMessage(
+            "Module ID is required"
+        )
+        .bail()
+        .custom(objectIdRule),
+
+
+    body("modules.*.order")
+        .isInt({ min: 1 })
+        .withMessage(
+            "Module order must be a positive integer"
+        ),
+];
+
