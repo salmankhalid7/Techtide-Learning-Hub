@@ -124,6 +124,27 @@ const moduleSchema = new Schema(
     }
 );
 
+/**
+ * -------------------------------------------------------
+ * Database Indexes
+ * -------------------------------------------------------
+ */
+
+// Frequently queried when fetching modules of a course
+moduleSchema.index({ course: 1 });
+
+// Filter modules by workflow status
+moduleSchema.index({ status: 1 });
+
+// Support drag-and-drop ordering within a course
+moduleSchema.index({ course: 1, order: 1 });
+
+// Support scheduled publishing
+moduleSchema.index({ releaseAt: 1 });
+
+// Improve soft-delete queries
+moduleSchema.index({ deletedAt: 1 });
+
 const Module = mongoose.model("Module", moduleSchema);
 
 export default Module;
