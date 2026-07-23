@@ -102,3 +102,22 @@ export const deleteModuleController = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, null, "Module deleted successfully."));
 });
+
+/**
+ * @desc    Reorder modules within a course
+ * @route   PATCH /api/v1/modules/reorder
+ * @access  Private (Instructor/Admin)
+ */
+export const reorderModuleController = asyncHandler(async (req, res) => {
+  const { courseId, modules } = req.body;
+
+  const updatedModules = await moduleService.reorderModules(
+    courseId,
+    modules,
+    req.user
+  );
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, updatedModules, "Modules reordered successfully."));
+});

@@ -8,12 +8,14 @@ import {
     publishModuleController,
     archiveModuleController,
     deleteModuleController,
+    reorderModuleController,
 } from "../controllers/module.controller.js";
 
 import {
     createModuleValidator,
     updateModuleValidator,
     moduleIdValidator,
+    reorderModuleValidator,
 } from "../validators/module.validator.js";
 
 import authenticate from "../middlewares/authenticate.js";
@@ -47,6 +49,16 @@ router.get(
  * All routes below require authentication.
  */
 router.use(authenticate);
+
+// Reorder Modules (must be before /:moduleId to avoid route conflict)
+router.patch(
+    "/reorder",
+    authorize("instructor", "admin"),
+    ...reorderModuleValidator,
+    validate,
+    reorderModuleController
+);
+
 
 // Create Module
 router.post(
