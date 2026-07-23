@@ -176,6 +176,35 @@ moduleSchema.pre(/^find/, function (next) {
     this.where({ deletedAt: null });
     next();
 });
+
+/**
+ * -------------------------------------------------------
+ * Static Methods
+ * -------------------------------------------------------
+ */
+
+/**
+ * Find active modules of a course
+ */
+moduleSchema.statics.findByCourse = function (courseId) {
+    return this.find({
+        course: courseId,
+        deletedAt: null,
+    }).sort({ order: 1 });
+};
+
+
+/**
+ * Find published modules of a course
+ */
+moduleSchema.statics.findPublishedByCourse = function (courseId) {
+    return this.find({
+        course: courseId,
+        status: "published",
+        deletedAt: null,
+    }).sort({ order: 1 });
+};
+
 const Module = mongoose.model("Module", moduleSchema);
 
 export default Module;
