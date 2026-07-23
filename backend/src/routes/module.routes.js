@@ -16,15 +16,9 @@ import {
     moduleIdValidator,
 } from "../validators/module.validator.js";
 
-import { validate } from "../middlewares/validate.middleware.js";
-
-import {
-    authenticate,
-} from "../middlewares/auth.middleware.js";
-
-import {
-    authorizeRoles,
-} from "../middlewares/rbac.middleware.js";
+import authenticate from "../middlewares/authenticate.js";
+import authorize from "../middlewares/authorize.js";
+import validate from "../middlewares/validation.middleware.js";
 
 
 const router = Router();
@@ -38,7 +32,7 @@ const router = Router();
 router.post(
     "/",
     authenticate,
-    authorizeRoles("teacher", "admin"),
+    authorize("teacher", "admin"),
     createModuleValidator,
     validate,
     createModuleController
@@ -49,7 +43,7 @@ router.post(
 router.patch(
     "/:moduleId",
     authenticate,
-    authorizeRoles("teacher", "admin"),
+    authorize("teacher", "admin"),
     updateModuleValidator,
     validate,
     updateModuleController
@@ -60,7 +54,7 @@ router.patch(
 router.patch(
     "/:moduleId/publish",
     authenticate,
-    authorizeRoles("teacher", "admin"),
+    authorize("teacher", "admin"),
     moduleIdValidator,
     validate,
     publishModuleController
@@ -71,7 +65,7 @@ router.patch(
 router.patch(
     "/:moduleId/archive",
     authenticate,
-    authorizeRoles("teacher", "admin"),
+    authorize("teacher", "admin"),
     moduleIdValidator,
     validate,
     archiveModuleController
@@ -82,7 +76,7 @@ router.patch(
 router.delete(
     "/:moduleId",
     authenticate,
-    authorizeRoles("teacher", "admin"),
+    authorize("teacher", "admin"),
     moduleIdValidator,
     validate,
     deleteModuleController

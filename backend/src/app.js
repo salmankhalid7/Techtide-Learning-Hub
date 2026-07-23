@@ -14,7 +14,7 @@ import routes from "./routes/index.js";
 import notFound from "./middlewares/notFound.middleware.js";
 import errorHandler from "./middlewares/error.middleware.js";
 import rateLimiter from "./middlewares/rateLimiter.middleware.js";
-
+import moduleRoutes from "./module.route.js";
 
 const app = express();
 
