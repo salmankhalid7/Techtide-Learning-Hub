@@ -17,3 +17,9 @@ export const LESSON_STATUS = Object.freeze([
     "PUBLISHED",
     "ARCHIVED"
 ]);
+
+export const LESSON_STATUS_ENUM = Object.freeze({
+    DRAFT: "DRAFT",
+    PUBLISHED: "PUBLISHED",
+    ARCHIVED: "ARCHIVED",
+});
