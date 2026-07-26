@@ -6,8 +6,8 @@
 import { body, param } from "express-validator";
 
 import { LESSON_TYPES, LESSON_STATUS } from "../constants/lesson.constants.js";
-import { objectIdRule } from "../rules/objectId.rule.js";
-import { validateRequest } from "../middlewares/validateRequest.middleware.js";
+import { objectIdRule } from "./rules/objectId.rule.js";
+import validate from "../middlewares/validation.middleware.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -59,7 +59,7 @@ export const createLessonValidator = [
         .isISO8601()
         .withMessage("Invalid release date."),
 
-    validateRequest
+    validate
 ];
 
 /*
@@ -101,7 +101,7 @@ export const updateLessonValidator = [
         .optional()
         .isISO8601(),
 
-    validateRequest
+    validate
 ];
 
 /*
@@ -112,7 +112,7 @@ export const updateLessonValidator = [
 
 export const getLessonValidator = [
     objectIdRule("lessonId"),
-    validateRequest
+    validate
 ];
 
 /*
@@ -123,7 +123,7 @@ export const getLessonValidator = [
 
 export const deleteLessonValidator = [
     objectIdRule("lessonId"),
-    validateRequest
+    validate
 ];
 
 /*
@@ -139,7 +139,7 @@ export const publishLessonValidator = [
         .optional()
         .isIn(LESSON_STATUS),
 
-    validateRequest
+    validate
 ];
 
 /*
@@ -150,7 +150,29 @@ export const publishLessonValidator = [
 
 export const archiveLessonValidator = [
     objectIdRule("lessonId"),
-    validateRequest
+    validate
+];
+
+/*
+|--------------------------------------------------------------------------
+| Get Lessons By Module
+|--------------------------------------------------------------------------
+*/
+
+export const getLessonsByModuleValidator = [
+    objectIdRule("moduleId"),
+    validate
+];
+
+/*
+|--------------------------------------------------------------------------
+| Lesson ID
+|--------------------------------------------------------------------------
+*/
+
+export const lessonIdValidator = [
+    objectIdRule("lessonId"),
+    validate
 ];
 
 /*
@@ -174,5 +196,5 @@ export const reorderLessonsValidator = [
         .isInt({ min: 1 })
         .withMessage("Order must be greater than zero."),
 
-    validateRequest
+    validate
 ];
