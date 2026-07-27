@@ -50,8 +50,7 @@ const errorHandler = (err, req, res, next) => {
 
   // ── MongoDB Duplicate Key Error ────────────────────────────
   else if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
-    error = new ConflictError(`${field} already exists`);
+    error = new ConflictError("Duplicate key error.");
   }
 
   // ── Invalid MongoDB ObjectId ──────────────────────────────

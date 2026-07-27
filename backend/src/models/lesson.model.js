@@ -39,7 +39,7 @@ const videoContentSchema = new Schema(
         duration: Number,
         provider: {
             type: String,
-            enum: ["INTERNAL", "YOUTUBE", "VIMEO", "WISTIA", "CLOUDINARY"],
+            enum: ["INTERNAL", "YOUTUBE", "VIMEO", "WISTIA", "CLOUDINARY", "CUSTOM"],
             default: "INTERNAL"
         },
         videoId: String,
@@ -295,11 +295,12 @@ const lessonSchema = new Schema(
 |--------------------------------------------------------------------------
 */
 
-lessonSchema.index({ slug: 1 }, { unique: true });
-
 lessonSchema.index(
     { module: 1, order: 1 },
-    { unique: true }
+    {
+        unique: true,
+        partialFilterExpression: { isDeleted: false }
+    }
 );
 
 lessonSchema.index({ releaseAt: 1 });
@@ -342,12 +343,10 @@ lessonSchema.virtual("estimatedReadingTime").get(function () {
 |--------------------------------------------------------------------------
 */
 
-lessonSchema.pre(/^find/, function (next) {
+lessonSchema.pre(/^find/, function () {
     this.where({
         isDeleted: false
     });
-
-    next();
 });
 
 /*

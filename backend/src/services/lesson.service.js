@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 /**
  * @file lesson.service.js
  * @description Business logic for Lesson operations.
@@ -35,6 +36,8 @@ import { NotFoundError, BadRequestError } from "../errors/index.js";
  * If no lessons exist, starts at 1.
  */
 const getNextOrder = async (moduleId, session = null) => {
+    // Use Mongoose findOne so the pre-find middleware (isDeleted: false)
+    // is applied — only count active lessons for auto-assigning order.
     const query = Lesson.findOne({ module: moduleId })
         .sort({ order: -1 })
         .select("order");
@@ -61,6 +64,7 @@ const shiftOrdersDown = async (moduleId, insertAt, session = null) => {
                 updateMany: {
                     filter: {
                         module: moduleId,
+                        isDeleted: false,
                         order: { $gte: insertAt },
                     },
                     update: { $inc: { order: 1 } },
@@ -119,7 +123,6 @@ const ALLOWED_UPDATE_FIELDS = [
     "lessonType",
     "content",
     "resources",
-    "order",
     "duration",
     "isPreview",
     "isLocked",
@@ -377,25 +380,60 @@ export const archiveLesson = async (lessonId, user, session = null) => {
  * @returns {Promise<object>}
  */
 export const deleteLesson = async (lessonId, user, session = null) => {
-    const lesson = await Lesson.findById(lessonId).session(session);
-
-    if (!lesson || lesson.isDeleted) {
-        throw new NotFoundError("Lesson not found");
+    // Start a transaction if no session was provided, so that the
+    // soft-delete and order reindex are atomic.
+    const ownsSession = !session;
+    if (ownsSession) {
+        session = await mongoose.startSession();
+        session.startTransaction();
     }
 
-    const module = await Module.findById(lesson.module).session(session);
-    if (!module) {
-        throw new NotFoundError("Associated module not found");
+    try {
+        const lesson = await Lesson.findById(lessonId).session(session);
+
+        if (!lesson || lesson.isDeleted) {
+            throw new NotFoundError("Lesson not found");
+        }
+
+        const module = await Module.findById(lesson.module).session(session);
+        if (!module) {
+            throw new NotFoundError("Associated module not found");
+        }
+
+        await verifyCourseOwnership(module.course, user);
+
+        lesson.isDeleted = true;
+        lesson.deletedAt = new Date();
+
+        await lesson.save({ session });
+
+        // Reindex: decrement orders of all subsequent active lessons
+        // in the same module to keep ordering contiguous.
+        await Lesson.updateMany(
+            {
+                module: lesson.module,
+                order: { $gt: lesson.order },
+                isDeleted: false,
+            },
+            { $inc: { order: -1 } },
+            { session }
+        );
+
+        if (ownsSession) {
+            await session.commitTransaction();
+        }
+
+        return { id: lessonId, deleted: true };
+    } catch (error) {
+        if (ownsSession) {
+            await session.abortTransaction();
+        }
+        throw error;
+    } finally {
+        if (ownsSession) {
+            session.endSession();
+        }
     }
-
-    await verifyCourseOwnership(module.course, user);
-
-    lesson.isDeleted = true;
-    lesson.deletedAt = new Date();
-
-    session ? await lesson.save({ session }) : await lesson.save();
-
-    return { id: lessonId, deleted: true };
 };
 
 // ── Reorder Lessons ────────────────────────────────────────
@@ -442,17 +480,46 @@ export const reorderLessons = async (moduleId, lessons, user, session = null) =>
         );
     }
 
-    // Build bulk operations
-    const operations = lessons.map((item) => ({
-        updateOne: {
-            filter: { _id: item.lessonId, module: moduleId },
-            update: { $set: { order: item.order } },
-        },
-    }));
+    // Validate all orders are positive integers
+    const orders = lessons.map((item) => item.order);
+    if (orders.some((o) => !Number.isInteger(o) || o < 1)) {
+        throw new BadRequestError("All orders must be positive integers.");
+    }
 
-    const bulkOptions = session ? { session } : {};
+    // Validate all orders are unique
+    if (new Set(orders).size !== orders.length) {
+        throw new BadRequestError("Duplicate orders are not allowed.");
+    }
 
-    await Lesson.bulkWrite(operations, bulkOptions);
+    // Two-phase reorder with sequential updates to avoid transient
+    // unique-index conflicts.
+    //
+    // Phase 1: move affected lessons to unique temp values using a
+    //          Date.now() offset (guaranteed collision-free).
+    // Phase 2: assign the final orders.
+    //
+    // Sequential updates ensure Phase 1 fully vacates the target
+    // positions before Phase 2 begins.
+
+    const TEMP_BASE = Date.now();
+
+    // Phase 1 — Unique temporary values (sequential)
+    for (let i = 0; i < lessons.length; i++) {
+        await Lesson.updateOne(
+            { _id: lessons[i].lessonId, module: moduleId },
+            { $set: { order: TEMP_BASE + i } },
+            session ? { session } : {}
+        );
+    }
+
+    // Phase 2 — Final positive orders (sequential)
+    for (const item of lessons) {
+        await Lesson.updateOne(
+            { _id: item.lessonId, module: moduleId },
+            { $set: { order: item.order } },
+            session ? { session } : {}
+        );
+    }
 
     // Return the updated list in the new order
     return Lesson.find({ module: moduleId }).session(session).sort({ order: 1 });

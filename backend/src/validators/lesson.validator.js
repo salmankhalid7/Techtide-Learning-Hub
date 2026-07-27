@@ -4,6 +4,7 @@
  */
 
 import { body, param } from "express-validator";
+import mongoose from "mongoose";
 
 import { LESSON_TYPES, LESSON_STATUS } from "../constants/lesson.constants.js";
 import { objectIdRule } from "./rules/objectId.rule.js";
@@ -16,7 +17,12 @@ import validate from "../middlewares/validation.middleware.js";
 */
 
 export const createLessonValidator = [
-    objectIdRule("module"),
+    body("module")
+        .notEmpty()
+        .withMessage("Module ID is required.")
+        .bail()
+        .isMongoId()
+        .withMessage("Invalid module ID."),
 
     body("title")
         .trim()
@@ -38,6 +44,7 @@ export const createLessonValidator = [
         .withMessage("Invalid lesson type."),
 
     body("order")
+        .optional()
         .isInt({ min: 1 })
         .withMessage("Order must be greater than zero."),
 
@@ -182,7 +189,9 @@ export const lessonIdValidator = [
 */
 
 export const reorderLessonsValidator = [
-    objectIdRule("module"),
+    param("moduleId")
+        .custom((value) => mongoose.Types.ObjectId.isValid(value))
+        .withMessage("Invalid module ID."),
 
     body("lessons")
         .isArray({ min: 1 })
