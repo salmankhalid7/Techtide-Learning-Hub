@@ -45,14 +45,12 @@ router.get(
 
 /**
  * Teacher/Admin Module Management
- *
- * All routes below require authentication.
  */
-router.use(authenticate);
 
 // Reorder Modules (must be before /:moduleId to avoid route conflict)
 router.patch(
     "/reorder",
+    authenticate,
     authorize("instructor", "admin"),
     ...reorderModuleValidator,
     validate,
@@ -63,6 +61,7 @@ router.patch(
 // Create Module
 router.post(
     "/",
+    authenticate,
     authorize("instructor", "admin"),
     ...createModuleValidator,
     validate,
@@ -73,6 +72,7 @@ router.post(
 // Update Module
 router.patch(
     "/:moduleId",
+    authenticate,
     authorize("instructor", "admin"),
     ...updateModuleValidator,
     validate,
@@ -83,6 +83,7 @@ router.patch(
 // Publish Module
 router.patch(
     "/:moduleId/publish",
+    authenticate,
     authorize("instructor", "admin"),
     ...moduleIdValidator,
     validate,
@@ -93,6 +94,7 @@ router.patch(
 // Archive Module
 router.patch(
     "/:moduleId/archive",
+    authenticate,
     authorize("instructor", "admin"),
     ...moduleIdValidator,
     validate,
@@ -103,6 +105,7 @@ router.patch(
 // Delete Module
 router.delete(
     "/:moduleId",
+    authenticate,
     authorize("instructor", "admin"),
     ...moduleIdValidator,
     validate,

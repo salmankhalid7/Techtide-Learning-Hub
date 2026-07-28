@@ -9,6 +9,7 @@ import lessonRouter from "./lesson.routes.js";
 import enrollmentRouter from "./enrollment.routes.js";
 import uploadRouter from "./upload.routes.js";
 import moduleRoutes from "./module.routes.js";
+import quizRoutes from "./quiz.routes.js";
 import {
   getApiInfo,
 } from "../controllers/system.controller.js";
@@ -33,7 +34,8 @@ router.use("/lessons", lessonRouter);
 router.use("/enrollments", enrollmentRouter);
 router.use("/uploads", uploadRouter);
 router.use(
-    "/modules",
-    moduleRoutes
+  "/modules",
+  moduleRoutes
 );
+router.use(quizRoutes);
 export default router;

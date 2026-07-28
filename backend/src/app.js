@@ -17,6 +17,7 @@ import rateLimiter from "./middlewares/rateLimiter.middleware.js";
 
 const app = express();
 
+
 // ──────────────────────────────────────────────
 // Security Headers
 // ──────────────────────────────────────────────
@@ -60,7 +61,7 @@ app.use(
 );
 /**
  * Parse URL-encoded form data.
- */
+*/
 app.use(
   express.urlencoded({
     extended: true,
