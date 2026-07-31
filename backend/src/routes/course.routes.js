@@ -1,6 +1,14 @@
 import { Router } from "express";
 
-import * as courseController from "../controllers/course.controller.js";
+import {
+  getCourses,
+  getCourseById,
+  createCourse,
+  updateCourse,
+  publishCourse,
+  archiveCourse,
+  deleteCourse,
+} from "../controllers/course.controller.js";
 import authenticate from "../middlewares/authenticate.js";
 import authorize from "../middlewares/authorize.js";
 import validate from "../middlewares/validation.middleware.js";
@@ -16,14 +24,14 @@ const router = Router();
 // ── Public Routes ──────────────────────────────────────────
 
 // GET /courses — List courses with optional filtering and pagination
-router.get("/", validateCourseFilters, validate, courseController.getCourses);
+router.get("/", validateCourseFilters, validate, getCourses);
 
 // GET /courses/:courseId — Get a single course by ID
 router.get(
   "/:courseId",
   validateCourseId,
   validate,
-  courseController.getCourseById
+  getCourseById
 );
 
 // ── Protected Routes (auth required) ───────────────────────
@@ -36,7 +44,7 @@ router.post(
   authorize("instructor", "admin"),
   validateCreateCourse,
   validate,
-  courseController.createCourse
+  createCourse
 );
 
 // PATCH /courses/:courseId — Update a course (instructors & admins only)
@@ -45,7 +53,7 @@ router.patch(
   authorize("instructor", "admin"),
   validateUpdateCourse,
   validate,
-  courseController.updateCourse
+  updateCourse
 );
 
 // PATCH /courses/:courseId/publish — Publish a draft course
@@ -54,7 +62,7 @@ router.patch(
   authorize("instructor", "admin"),
   validateCourseId,
   validate,
-  courseController.publishCourse
+  publishCourse
 );
 
 // PATCH /courses/:courseId/archive — Archive a course
@@ -63,7 +71,7 @@ router.patch(
   authorize("instructor", "admin"),
   validateCourseId,
   validate,
-  courseController.archiveCourse
+  archiveCourse
 );
 
 // DELETE /courses/:courseId — Soft-delete a course
@@ -72,7 +80,7 @@ router.delete(
   authorize("instructor", "admin"),
   validateCourseId,
   validate,
-  courseController.deleteCourse
+  deleteCourse
 );
 
 export default router;

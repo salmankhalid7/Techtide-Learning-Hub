@@ -5,7 +5,16 @@
 
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import * as quizService from "../services/quiz.service.js";
+import {
+  createQuiz as createQuizService,
+  updateQuiz as updateQuizService,
+  getQuiz as getQuizService,
+  getModuleQuizzes as getModuleQuizzesService,
+  publishQuiz as publishQuizService,
+  archiveQuiz as archiveQuizService,
+  deleteQuiz as deleteQuizService,
+  reorderQuizzes as reorderQuizzesService,
+} from "../services/quiz.service.js";
 
 /**
  * @desc Create a new quiz
@@ -13,7 +22,7 @@ import * as quizService from "../services/quiz.service.js";
  * @access Private (Instructor/Admin)
  */
 const createQuiz = asyncHandler(async (req, res) => {
-  const quiz = await quizService.createQuiz({
+  const quiz = await createQuizService({
     moduleId: req.params.moduleId,
     user: req.user,
     data: req.body,
@@ -30,7 +39,7 @@ const createQuiz = asyncHandler(async (req, res) => {
  * @access Private (Instructor/Admin)
  */
 const updateQuiz = asyncHandler(async (req, res) => {
-  const quiz = await quizService.updateQuiz({
+  const quiz = await updateQuizService({
     quizId: req.params.quizId,
     user: req.user,
     data: req.body,
@@ -47,7 +56,7 @@ const updateQuiz = asyncHandler(async (req, res) => {
  * @access Private (Instructor/Admin)
  */
 const getQuiz = asyncHandler(async (req, res) => {
-  const quiz = await quizService.getQuiz({
+  const quiz = await getQuizService({
     quizId: req.params.quizId,
     user: req.user,
   });
@@ -63,7 +72,7 @@ const getQuiz = asyncHandler(async (req, res) => {
  * @access Private (Instructor/Admin)
  */
 const getModuleQuizzes = asyncHandler(async (req, res) => {
-  const quizzes = await quizService.getModuleQuizzes({
+  const quizzes = await getModuleQuizzesService({
     moduleId: req.params.moduleId,
     user: req.user,
     query: req.query,
@@ -80,7 +89,7 @@ const getModuleQuizzes = asyncHandler(async (req, res) => {
  * @access Private (Instructor/Admin)
  */
 const publishQuiz = asyncHandler(async (req, res) => {
-  const quiz = await quizService.publishQuiz({
+  const quiz = await publishQuizService({
     quizId: req.params.quizId,
     user: req.user,
   });
@@ -96,7 +105,7 @@ const publishQuiz = asyncHandler(async (req, res) => {
  * @access Private (Instructor/Admin)
  */
 const archiveQuiz = asyncHandler(async (req, res) => {
-  const quiz = await quizService.archiveQuiz({
+  const quiz = await archiveQuizService({
     quizId: req.params.quizId,
     user: req.user,
   });
@@ -112,7 +121,7 @@ const archiveQuiz = asyncHandler(async (req, res) => {
  * @access Private (Instructor/Admin)
  */
 const deleteQuiz = asyncHandler(async (req, res) => {
-  await quizService.deleteQuiz({
+  await deleteQuizService({
     quizId: req.params.quizId,
     user: req.user,
   });
@@ -128,7 +137,7 @@ const deleteQuiz = asyncHandler(async (req, res) => {
  * @access Private (Instructor/Admin)
  */
 const reorderQuizzes = asyncHandler(async (req, res) => {
-  const quizzes = await quizService.reorderQuizzes({
+  const quizzes = await reorderQuizzesService({
     moduleId: req.params.moduleId,
     user: req.user,
     quizzes: req.body.quizzes,

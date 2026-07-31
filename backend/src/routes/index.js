@@ -10,6 +10,7 @@ import enrollmentRouter from "./enrollment.routes.js";
 import uploadRouter from "./upload.routes.js";
 import moduleRoutes from "./module.routes.js";
 import quizRoutes from "./quiz.routes.js";
+import questionRoutes from "./question.routes.js";
 import {
   getApiInfo,
 } from "../controllers/system.controller.js";
@@ -38,4 +39,5 @@ router.use(
   moduleRoutes
 );
 router.use(quizRoutes);
+router.use(questionRoutes);
 export default router;

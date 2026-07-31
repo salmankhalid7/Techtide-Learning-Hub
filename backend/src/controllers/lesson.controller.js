@@ -1,6 +1,15 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import * as lessonService from "../services/lesson.service.js";
+import {
+  createLesson,
+  getLessonById,
+  getLessonsByModule,
+  updateLesson,
+  publishLesson,
+  archiveLesson,
+  deleteLesson,
+  reorderLessons,
+} from "../services/lesson.service.js";
 
 /**
  * @desc    Create a new lesson
@@ -8,7 +17,7 @@ import * as lessonService from "../services/lesson.service.js";
  * @access  Private (Teacher/Admin)
  */
 export const createLessonController = asyncHandler(async (req, res) => {
-    const lesson = await lessonService.createLesson(req.body, req.user);
+    const lesson = await createLesson(req.body, req.user);
 
     return res
         .status(201)
@@ -21,7 +30,7 @@ export const createLessonController = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getLessonByIdController = asyncHandler(async (req, res) => {
-    const lesson = await lessonService.getLessonById(req.params.lessonId);
+    const lesson = await getLessonById(req.params.lessonId);
 
     return res
         .status(200)
@@ -34,7 +43,7 @@ export const getLessonByIdController = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getLessonsByModuleController = asyncHandler(async (req, res) => {
-    const lessons = await lessonService.getLessonsByModule(
+    const lessons = await getLessonsByModule(
         req.params.moduleId
     );
 
@@ -51,7 +60,7 @@ export const getLessonsByModuleController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const updateLessonController = asyncHandler(async (req, res) => {
-    const lesson = await lessonService.updateLesson(
+    const lesson = await updateLesson(
         req.params.lessonId,
         req.body,
         req.user
@@ -68,7 +77,7 @@ export const updateLessonController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const publishLessonController = asyncHandler(async (req, res) => {
-    const lesson = await lessonService.publishLesson(
+    const lesson = await publishLesson(
         req.params.lessonId,
         req.user
     );
@@ -86,7 +95,7 @@ export const publishLessonController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const archiveLessonController = asyncHandler(async (req, res) => {
-    const lesson = await lessonService.archiveLesson(
+    const lesson = await archiveLesson(
         req.params.lessonId,
         req.user
     );
@@ -104,7 +113,7 @@ export const archiveLessonController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const deleteLessonController = asyncHandler(async (req, res) => {
-    await lessonService.deleteLesson(req.params.lessonId, req.user);
+    await deleteLesson(req.params.lessonId, req.user);
 
     return res
         .status(200)
@@ -117,7 +126,7 @@ export const deleteLessonController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const reorderLessonsController = asyncHandler(async (req, res) => {
-    const lessons = await lessonService.reorderLessons(
+    const lessons = await reorderLessons(
         req.params.moduleId,
         req.body.lessons,
         req.user

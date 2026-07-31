@@ -1,0 +1,41 @@
+/**
+ * @file question.constants.js
+ * @description Constants for the Question Management System.
+ */
+
+const QUESTION_TYPES = Object.freeze({
+  MULTIPLE_CHOICE_SINGLE: "MULTIPLE_CHOICE_SINGLE",
+  MULTIPLE_CHOICE_MULTIPLE: "MULTIPLE_CHOICE_MULTIPLE",
+  TRUE_FALSE: "TRUE_FALSE",
+  SHORT_ANSWER: "SHORT_ANSWER",
+  LONG_ANSWER: "LONG_ANSWER",
+  FILL_IN_THE_BLANK: "FILL_IN_THE_BLANK",
+  MATCHING: "MATCHING",
+  ORDERING: "ORDERING",
+});
+
+const DIFFICULTY_LEVELS = Object.freeze({
+  EASY: "EASY",
+  MEDIUM: "MEDIUM",
+  HARD: "HARD",
+});
+
+const QUESTION_LIMITS = Object.freeze({
+  MIN_OPTIONS: 2,
+  MAX_OPTIONS: 10,
+
+  MIN_MARKS: 0.1,
+
+  MIN_ESTIMATED_TIME: 5,      // seconds
+  MAX_ESTIMATED_TIME: 3600,   // 1 hour
+
+  MAX_TAGS: 20,
+  MAX_ATTACHMENTS: 10,
+  MAX_IMAGES: 10,
+});
+
+export {
+  QUESTION_TYPES,
+  DIFFICULTY_LEVELS,
+  QUESTION_LIMITS,
+};

@@ -1,6 +1,15 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import * as moduleService from "../services/module.service.js";
+import {
+  createModule,
+  getModuleById,
+  getModulesByCourse,
+  updateModule,
+  publishModule,
+  archiveModule,
+  deleteModule,
+  reorderModules,
+} from "../services/module.service.js";
 
 /**
  * @desc    Create a new module
@@ -8,7 +17,7 @@ import * as moduleService from "../services/module.service.js";
  * @access  Private (Teacher/Admin)
  */
 export const createModuleController = asyncHandler(async (req, res) => {
-  const module = await moduleService.createModule(req.body, req.user);
+  const module = await createModule(req.body, req.user);
 
   return res
     .status(201)
@@ -21,7 +30,7 @@ export const createModuleController = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const getModuleController = asyncHandler(async (req, res) => {
-  const module = await moduleService.getModuleById(req.params.moduleId);
+  const module = await getModuleById(req.params.moduleId);
 
   return res
     .status(200)
@@ -34,7 +43,7 @@ export const getModuleController = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const getCourseModulesController = asyncHandler(async (req, res) => {
-  const modules = await moduleService.getModulesByCourse(req.params.courseId);
+  const modules = await getModulesByCourse(req.params.courseId);
 
   return res
     .status(200)
@@ -47,7 +56,7 @@ export const getCourseModulesController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const updateModuleController = asyncHandler(async (req, res) => {
-  const module = await moduleService.updateModule(
+  const module = await updateModule(
     req.params.moduleId,
     req.body,
     req.user
@@ -64,7 +73,7 @@ export const updateModuleController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const publishModuleController = asyncHandler(async (req, res) => {
-  const module = await moduleService.publishModule(
+  const module = await publishModule(
     req.params.moduleId,
     req.user
   );
@@ -80,7 +89,7 @@ export const publishModuleController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const archiveModuleController = asyncHandler(async (req, res) => {
-  const module = await moduleService.archiveModule(
+  const module = await archiveModule(
     req.params.moduleId,
     req.user
   );
@@ -96,7 +105,7 @@ export const archiveModuleController = asyncHandler(async (req, res) => {
  * @access  Private (Teacher/Admin)
  */
 export const deleteModuleController = asyncHandler(async (req, res) => {
-  await moduleService.deleteModule(req.params.moduleId, req.user);
+  await deleteModule(req.params.moduleId, req.user);
 
   return res
     .status(200)
@@ -111,7 +120,7 @@ export const deleteModuleController = asyncHandler(async (req, res) => {
 export const reorderModuleController = asyncHandler(async (req, res) => {
   const { courseId, modules } = req.body;
 
-  const updatedModules = await moduleService.reorderModules(
+  const updatedModules = await reorderModules(
     courseId,
     modules,
     req.user

@@ -5,7 +5,16 @@
 
 import { Router } from "express";
 
-import * as quizController from "../controllers/quiz.controller.js";
+import {
+  createQuiz,
+  getModuleQuizzes,
+  getQuiz,
+  updateQuiz,
+  publishQuiz,
+  archiveQuiz,
+  deleteQuiz,
+  reorderQuizzes,
+} from "../controllers/quiz.controller.js";
 import {
   createQuizValidator,
   updateQuizValidator,
@@ -29,7 +38,7 @@ router.post(
   authorize("instructor", "admin"),
   createQuizValidator,
   validate,
-  quizController.createQuiz
+  createQuiz
 );
 
 router.get(
@@ -38,7 +47,7 @@ router.get(
   authorize("instructor", "admin"),
   getModuleQuizzesValidator,
   validate,
-  quizController.getModuleQuizzes
+  getModuleQuizzes
 );
 
 router.get(
@@ -47,7 +56,7 @@ router.get(
   authorize("instructor", "admin"),
   getQuizValidator,
   validate,
-  quizController.getQuiz
+  getQuiz
 );
 
 router.patch(
@@ -56,7 +65,7 @@ router.patch(
   authorize("instructor", "admin"),
   updateQuizValidator,
   validate,
-  quizController.updateQuiz
+  updateQuiz
 );
 
 router.patch(
@@ -65,7 +74,7 @@ router.patch(
   authorize("instructor", "admin"),
   publishQuizValidator,
   validate,
-  quizController.publishQuiz
+  publishQuiz
 );
 
 router.patch(
@@ -74,7 +83,7 @@ router.patch(
   authorize("instructor", "admin"),
   archiveQuizValidator,
   validate,
-  quizController.archiveQuiz
+  archiveQuiz
 );
 
 router.delete(
@@ -83,7 +92,7 @@ router.delete(
   authorize("instructor", "admin"),
   deleteQuizValidator,
   validate,
-  quizController.deleteQuiz
+  deleteQuiz
 );
 
 router.patch(
@@ -92,7 +101,7 @@ router.patch(
   authorize("instructor", "admin"),
   reorderQuizValidator,
   validate,
-  quizController.reorderQuizzes
+  reorderQuizzes
 );
 
 export default router;
