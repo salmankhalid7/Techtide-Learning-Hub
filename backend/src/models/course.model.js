@@ -326,7 +326,16 @@ courseSchema.pre("validate", async function () {
   let candidate = baseSlug;
   let counter = 0;
 
-  while (await mongoose.model("Course").exists({ slug: candidate, _id: { $ne: this._id } })) {
+  // NOTE: must include `isDeleted: { $in: [true, false] }` so the soft-delete
+  // query middleware does NOT hide soft-deleted docs — the unique slug index
+  // still contains them, so they must count toward uniqueness.
+  while (
+    await mongoose.model("Course").exists({
+      slug: candidate,
+      _id: { $ne: this._id },
+      isDeleted: { $in: [true, false] },
+    })
+  ) {
     counter += 1;
     candidate = `${baseSlug}-${counter}`;
   }

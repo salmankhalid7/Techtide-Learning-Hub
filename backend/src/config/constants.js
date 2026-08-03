@@ -26,7 +26,8 @@ const constants = {
   ENROLLMENT_STATUS: {
     ACTIVE: "active",
     COMPLETED: "completed",
-    CANCELLED: "cancelled",
+    DROPPED: "dropped",
+    SUSPENDED: "suspended",
   },
 
   FILES: {

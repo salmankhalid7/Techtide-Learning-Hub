@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import slugify from "slugify";
 
 import Quiz from "../models/quiz.model.js";
+import Question from "../models/question.model.js";
 import Module from "../models/module.model.js";
 
 import { verifyCourseOwnership } from "../helpers/ownership.helper.js";
@@ -305,7 +306,7 @@ const publishQuiz = async ({ quizId, user }) => {
   logger.info(`Publishing quiz: ${quizId}`);
 
   const quiz = await _getOwnedQuiz({ quizId, user });
-  _validatePublishRules(quiz);
+  await _validatePublishRules(quiz);
 
   quiz.status = "PUBLISHED";
   quiz.publishedAt = new Date();
@@ -324,8 +325,13 @@ const publishQuiz = async ({ quizId, user }) => {
  * @param {Quiz} quiz
  * @throws {BadRequestError}
  */
-const _validatePublishRules = (quiz) => {
-  if (!quiz.questions.length) {
+const _validatePublishRules = async (quiz) => {
+  const questionCount = await Question.countDocuments({
+    quiz: quiz._id,
+    deletedAt: null,
+  });
+
+  if (questionCount === 0) {
     throw new BadRequestError("Quiz must contain at least one question before publishing.");
   }
   if (quiz.settings.passingPercentage < 0 || quiz.settings.passingPercentage > 100) {
