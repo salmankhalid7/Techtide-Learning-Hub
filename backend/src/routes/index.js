@@ -14,6 +14,7 @@ import questionRouter from "./question.routes.js";
 import attemptRouter from "./attempt.routes.js";
 import progressRouter from "./progress.routes.js";
 import { getApiInfo } from "../controllers/system.controller.js";
+import dashboardRoutes from "./dashboard.routes.js";
 
 const router = Router();
 
@@ -42,5 +43,5 @@ router.use(questionRouter);
 router.use(attemptRouter);
 router.use(enrollmentRouter);
 router.use(progressRouter);
-
+router.use("/instructor/dashboard", dashboardRoutes);
 export default router;

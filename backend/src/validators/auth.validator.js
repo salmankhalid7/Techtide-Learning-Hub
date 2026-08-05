@@ -10,7 +10,7 @@ import { passwordStrengthRule } from "./rules/passwordStrength.rule.js";
 const confirmPasswordRule = () =>
   body("confirmPassword")
     .notEmpty()
-    .withMessage("Confirm password is required.")
+    .withMessage("Confirm password is1 required.")
     .custom((value, { req }) => {
       if (value !== req.body.password) {
         throw new Error("Passwords do not match.");

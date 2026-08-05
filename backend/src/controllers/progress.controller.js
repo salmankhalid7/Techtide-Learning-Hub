@@ -21,7 +21,7 @@ export const updateLessonProgress = async (req, res, next) => {
         const progress = await progressService.updateLessonProgress({
             lessonId: req.params.lessonId,
             studentId: req.user._id,
-            completed: req.body.completed,
+            completed: req.body.isCompleted,
         });
 
         return res.status(httpStatus.OK).json({

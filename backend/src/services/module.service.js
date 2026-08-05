@@ -8,7 +8,7 @@ import { NotFoundError, BadRequestError, ForbiddenError } from "../errors/index.
  */
 export const createModule = async (moduleData, user) => {
 
-    const {
+    let {
         course,
         title,
         description,

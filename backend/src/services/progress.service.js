@@ -15,7 +15,7 @@ import logger from "../config/logger.js";
 import { NotFoundError } from "../errors/index.js";
 
 import { ENROLLMENT_STATUS } from "../constants/enrollment.constants.js";
-import { LESSON_STATUS } from "../constants/lesson.constants.js";
+import { LESSON_STATUS_ENUM } from "../constants/lesson.constants.js";
 import { MODULE_STATUS } from "../constants/module.constants.js";
 
 // ── Data fetchers ─────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ async function _getProgress(enrollmentId, session) {
 async function _getLesson(lessonId, session) {
     const lesson = await Lesson.findOne({
         _id: lessonId,
-        status: LESSON_STATUS.PUBLISHED,
+        status: LESSON_STATUS_ENUM.PUBLISHED,
     }).session(session);
 
     if (!lesson) {
@@ -119,7 +119,7 @@ function _groupLessonsByModule(lessons) {
 async function _getLessonsByModule(moduleIds, session) {
     const lessons = await Lesson.find({
         module: { $in: moduleIds },
-        status: LESSON_STATUS.PUBLISHED,
+        status: LESSON_STATUS_ENUM.PUBLISHED,
     })
         .select("_id module")
         .lean()
@@ -241,6 +241,7 @@ export async function updateLessonProgress({
         );
 
         if (progress.completionPercentage === 100) {
+            progress.isCourseCompleted = true;
             progress.completedAt ??= new Date();
             enrollment.status = ENROLLMENT_STATUS.COMPLETED;
             enrollment.completedAt = new Date();
@@ -301,6 +302,48 @@ export async function getLessonProgress({ lessonId, studentId }) {
 }
 
 /**
+ * Retrieve a module's progress for the student.
+ *
+ * @param {Object} params
+ * @param {mongoose.Types.ObjectId|string} params.moduleId
+ * @param {mongoose.Types.ObjectId|string} params.studentId
+ * @returns {Promise<Object>}
+ */
+export async function getModuleProgress({ moduleId, studentId }) {
+    const module = await _getModule(moduleId);
+    const enrollment = await _getEnrollment(module.course, studentId);
+    const progress = await _getProgress(enrollment._id);
+
+    const lessons = await Lesson.find({
+        module: module._id,
+        status: LESSON_STATUS_ENUM.PUBLISHED,
+    })
+        .select("_id title order duration lessonType")
+        .sort({ order: 1 })
+        .lean();
+
+    const completedSet = new Set(progress.completedLessons.map(String));
+    const completed = lessons.filter(
+        (l) => completedSet.has(l._id.toString())
+    ).length;
+    const total = lessons.length;
+    const completionPercentage =
+        total === 0 ? 0 : Math.round((completed / total) * 100);
+
+    return {
+        moduleId: module._id,
+        courseId: module.course,
+        title: module.title,
+        totalLessons: total,
+        completedLessons: completed,
+        completionPercentage,
+        completed: total > 0 && completionPercentage === 100,
+        currentLesson: progress.currentLesson,
+        lastAccessedAt: progress.lastAccessedAt,
+    };
+}
+
+/**
  * Retrieve complete module-by-module progress for a course.
  *
  * @param {Object} params
@@ -322,7 +365,7 @@ export async function getCourseProgress({ courseId, studentId }) {
 
     const lessons = await Lesson.find({
         module: { $in: modules.map((m) => m._id) },
-        status: LESSON_STATUS.PUBLISHED,
+        status: LESSON_STATUS_ENUM.PUBLISHED,
     })
         .select("_id module title order duration lessonType")
         .sort({ order: 1 })
@@ -392,7 +435,7 @@ export async function resumeLearning({ courseId, studentId }) {
 
     const lessons = await Lesson.find({
         module: { $in: modules.map((m) => m._id) },
-        status: LESSON_STATUS.PUBLISHED,
+        status: LESSON_STATUS_ENUM.PUBLISHED,
     })
         .select("_id module title order duration lessonType")
         .lean();

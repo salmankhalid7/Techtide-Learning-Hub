@@ -1,11 +1,6 @@
 /**
  * @file progress.model.js
- * @description Tracks a student's learning journey through an enrolled course:
- *              current position, lesson/module completion, percentage, resume,
- *              and time-on-task.
- *
- * Business logic for enrollment, quizzes, certificates, analytics, and AI
- * recommendations belongs in the Service layer — not here.
+ * @description Tracks a student's learning journey through an enrolled course.
  */
 
 import mongoose from "mongoose";
@@ -17,38 +12,8 @@ import {
 
 const { Schema, model } = mongoose;
 
-/* -------------------------------------------------------------------------- */
-/*                                JSDoc Typedef                               */
-/* -------------------------------------------------------------------------- */
-
-/**
- * @typedef {Object} Progress
- *
- * @property {mongoose.Types.ObjectId}   enrollment           — Parent Enrollment doc.
- * @property {mongoose.Types.ObjectId}   student              — Enrolled student.
- * @property {mongoose.Types.ObjectId}   course               — Enrolled course.
- * @property {mongoose.Types.ObjectId|null} currentModule     — Module currently being studied.
- * @property {mongoose.Types.ObjectId|null} currentLesson     — Lesson currently being viewed.
- * @property {mongoose.Types.ObjectId|null} lastLesson        — Last lesson accessed.
- * @property {mongoose.Types.ObjectId[]} completedLessons     — Completed lesson IDs.
- * @property {mongoose.Types.ObjectId[]} completedModules     — Completed module IDs.
- * @property {number}                    completionPercentage — 0–100.
- * @property {number}                    totalTimeSpent       — Seconds spent learning.
- * @property {boolean}                   isCourseCompleted
- * @property {Date|null}                 completedAt
- * @property {Object}                    metadata             — Extensible payload.
- * @property {Date}                      createdAt            — Mongoose timestamp.
- * @property {Date}                      updatedAt            — Mongoose timestamp.
- */
-
-/* -------------------------------------------------------------------------- */
-/*                                  Schema                                    */
-/* -------------------------------------------------------------------------- */
-
 const progressSchema = new Schema(
     {
-        // ── Relationships ──────────────────────────────────────────────
-
         enrollment: {
             type: Schema.Types.ObjectId,
             ref: "Enrollment",
@@ -68,8 +33,6 @@ const progressSchema = new Schema(
             required: true,
         },
 
-        // ── Current position ──────────────────────────────────────────
-
         currentModule: {
             type: Schema.Types.ObjectId,
             ref: "Module",
@@ -87,8 +50,6 @@ const progressSchema = new Schema(
             ref: "Lesson",
             default: null,
         },
-
-        // ── Completion tracking ───────────────────────────────────────
 
         completedLessons: [
             {
@@ -121,15 +82,11 @@ const progressSchema = new Schema(
             default: null,
         },
 
-        // ── Metrics ──────────────────────────────────────────────────
-
         totalTimeSpent: {
             type: Number,
             default: DEFAULT_PROGRESS.TOTAL_TIME_SPENT,
             min: 0,
         },
-
-        // ── Extensible payload ───────────────────────────────────────
 
         metadata: {
             type: Schema.Types.Mixed,
@@ -144,40 +101,24 @@ const progressSchema = new Schema(
     }
 );
 
-/* -------------------------------------------------------------------------- */
-/*                                  Indexes                                   */
-/* -------------------------------------------------------------------------- */
-
-// One progress doc per enrollment
 progressSchema.index(
     { enrollment: 1 },
     { unique: true, name: "unique_progress_per_enrollment" }
 );
 
-// One progress doc per student–course pair
 progressSchema.index(
     { student: 1, course: 1 },
     { unique: true, name: "unique_student_course_progress" }
 );
 
-// Student dashboard / course analytics / resume
 progressSchema.index({ student: 1 });
 progressSchema.index({ course: 1 });
 progressSchema.index({ student: 1, currentLesson: 1 });
 
-// Completion reporting
 progressSchema.index({ isCourseCompleted: 1 });
 progressSchema.index({ student: 1, isCourseCompleted: 1 });
 
-/* -------------------------------------------------------------------------- */
-/*                             Pre-Validate Hook                              */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Keeps completion fields consistent:
- * - Clamps completionPercentage to 0–100.
- * - Sets completedAt when course is marked completed; clears it otherwise.
- */
+// Clamp percentage & keep completion fields consistent.
 progressSchema.pre("validate", function () {
     this.completionPercentage = Math.min(
         PROGRESS_LIMITS.MAX_PERCENTAGE,
@@ -193,11 +134,7 @@ progressSchema.pre("validate", function () {
     }
 });
 
-/* -------------------------------------------------------------------------- */
-/*                                  Virtuals                                  */
-/* -------------------------------------------------------------------------- */
-
-/** Whether the learner is still progressing (course not yet completed). */
+/** True while the learner is still progressing. */
 progressSchema.virtual("isInProgress").get(function () {
     return !this.isCourseCompleted;
 });
@@ -212,17 +149,7 @@ progressSchema.virtual("completedModuleCount").get(function () {
     return this.completedModules.length;
 });
 
-/* -------------------------------------------------------------------------- */
-/*                             Instance Methods                               */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Set the learner's current position (module + lesson).
- * Mutates in-memory only — caller must persist via save().
- * @param {mongoose.Types.ObjectId} moduleId
- * @param {mongoose.Types.ObjectId} lessonId
- * @returns {Progress}
- */
+/** Set the learner's current position (module + lesson); persist via save(). */
 progressSchema.methods.touchLearningPosition = function (moduleId, lessonId) {
     this.currentModule = moduleId;
     this.currentLesson = lessonId;
@@ -230,12 +157,7 @@ progressSchema.methods.touchLearningPosition = function (moduleId, lessonId) {
     return this;
 };
 
-/**
- * Set the overall completion percentage (clamped 0–100).
- * Mutates in-memory only — caller must persist via save().
- * @param {number} percentage
- * @returns {Progress}
- */
+/** Set the overall completion percentage (clamped 0–100); persist via save(). */
 progressSchema.methods.updateCompletionPercentage = function (percentage) {
     this.completionPercentage = Math.min(
         PROGRESS_LIMITS.MAX_PERCENTAGE,
@@ -244,12 +166,7 @@ progressSchema.methods.updateCompletionPercentage = function (percentage) {
     return this;
 };
 
-/**
- * Increment total learning time by the given number of seconds.
- * Mutates in-memory only — caller must persist via save().
- * @param {number} seconds
- * @returns {Progress}
- */
+/** Increment total learning time by the given seconds; persist via save(). */
 progressSchema.methods.addTimeSpent = function (seconds = 0) {
     if (seconds > 0) {
         this.totalTimeSpent += seconds;
@@ -257,32 +174,19 @@ progressSchema.methods.addTimeSpent = function (seconds = 0) {
     return this;
 };
 
-/**
- * Check whether a specific lesson has been completed.
- * @param {mongoose.Types.ObjectId|string} lessonId
- * @returns {boolean}
- */
+/** Whether the given lesson has been completed. */
 progressSchema.methods.hasCompletedLesson = function (lessonId) {
     return this.completedLessons.some(
         (id) => id.toString() === lessonId.toString()
     );
 };
 
-/**
- * Mark the course as completed (100 %, sets completedAt via pre-validate hook).
- *
- * Final completion-validation belongs in the Service layer.
- * @returns {Promise<Progress>}
- */
+/** Mark the course as completed (100 %, sets completedAt via the hook). */
 progressSchema.methods.markCourseCompleted = function () {
     this.isCourseCompleted = true;
     this.completionPercentage = PROGRESS_LIMITS.MAX_PERCENTAGE;
     return this.save();
 };
-
-/* -------------------------------------------------------------------------- */
-/*                               Query Helpers                                */
-/* -------------------------------------------------------------------------- */
 
 /** Query helper — filter to active (incomplete) progress. */
 progressSchema.query.active = function () {
@@ -294,16 +198,7 @@ progressSchema.query.completed = function () {
     return this.where({ isCourseCompleted: true });
 };
 
-/* -------------------------------------------------------------------------- */
-/*                               Static Methods                               */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Look up a student's progress for a specific course.
- * @param {mongoose.Types.ObjectId} studentId
- * @param {mongoose.Types.ObjectId} courseId
- * @returns {Promise<Progress|null>}
- */
+/** Look up a student's progress for a specific course. */
 progressSchema.statics.findStudentCourseProgress = function (studentId, courseId) {
     return this.findOne({ student: studentId, course: courseId });
 };
