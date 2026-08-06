@@ -32,9 +32,30 @@ export const validateDashboardOverview = [];
 
 /**
  * Validation chain for recent courses (GET /recent-courses).
- * Accepts optional `page` and `limit` query params.
+ * Accepts optional `page`, `limit`, `search`, `status`, `sortBy` and
+ * `sortOrder` query params.
  */
-export const validateRecentCourses = [...paginationRules()];
+export const validateRecentCourses = [
+  ...paginationRules(),
+  query("search")
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ min: 1, max: 120 })
+    .withMessage("Search must be a 1-120 character string."),
+  query("status")
+    .optional()
+    .isIn(["DRAFT", "PUBLISHED", "ARCHIVED"])
+    .withMessage("Status must be DRAFT, PUBLISHED or ARCHIVED."),
+  query("sortBy")
+    .optional()
+    .isIn(["createdAt", "updatedAt", "title"])
+    .withMessage("sortBy must be createdAt, updatedAt or title."),
+  query("sortOrder")
+    .optional()
+    .isIn(["asc", "desc"])
+    .withMessage("sortOrder must be asc or desc."),
+];
 
 /**
  * Validation chain for recent enrollments (GET /recent-enrollments).

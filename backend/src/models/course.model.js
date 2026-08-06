@@ -272,6 +272,7 @@ const courseSchema = new Schema(
 
 courseSchema.index({ status: 1, visibility: 1 });
 courseSchema.index({ instructor: 1, status: 1 });
+courseSchema.index({ instructor: 1, createdAt: -1 });
 courseSchema.index({ category: 1, status: 1 });
 courseSchema.index({ "statistics.averageRating": -1 });
 courseSchema.index({ tags: 1 });

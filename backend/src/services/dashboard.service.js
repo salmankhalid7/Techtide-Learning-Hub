@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import Course from "../models/course.model.js";
 import Module from "../models/module.model.js";
 import Lesson from "../models/lesson.model.js";
-import Quiz from "../models/quiz.model.js";
+import Quiz, { QUIZ_STATUS } from "../models/quiz.model.js";
 import Enrollment from "../models/enrollment.model.js";
 import Progress from "../models/progress.model.js";
 
@@ -11,6 +11,18 @@ import { COURSE_STATUS } from "../constants/course.constants.js";
 import { ENROLLMENT_STATUS } from "../constants/enrollment.constants.js";
 import { MODULE_STATUS } from "../constants/module.constants.js";
 import { LESSON_STATUS_ENUM } from "../constants/lesson.constants.js";
+
+/* ---------------------------- Shared constants ---------------------------- */
+
+/** Default pagination values. */
+const DEFAULT_PAGE = 1;
+const DEFAULT_RECENT_COURSES_LIMIT = 5;
+const DEFAULT_RECENT_ENROLLMENTS_LIMIT = 10;
+const DEFAULT_TOP_COURSES_LIMIT = 5;
+
+/** Course fields projected for list-style dashboard responses. */
+const COURSE_LIST_PROJECTION =
+  "title slug status thumbnail statistics.totalEnrollments statistics.averageRating createdAt";
 
 /**
  * A structure aggregating the instructor's authored courses and their IDs.
@@ -24,23 +36,6 @@ class DashboardService {
   /* ------------------------------------------------------------------------ */
   /*                              Private Helpers                             */
   /* ------------------------------------------------------------------------ */
-
-  /**
-   * Resolve the instructor's course IDs (non-deleted courses only).
-   * @param {string|import("mongoose").Types.ObjectId} instructorId
-   * @returns {Promise<import("mongoose").Types.ObjectId[]>}
-   */
-  async _getCourseIds(instructorId) {
-    const instructorObjectId = new mongoose.Types.ObjectId(instructorId);
-
-    const [courseStats] = await Course.aggregate([
-      { $match: { instructor: instructorObjectId, isDeleted: false } },
-      { $group: { _id: null, courseIds: { $push: "$_id" } } },
-      { $project: { _id: 0, courseIds: 1 } },
-    ]);
-
-    return courseStats?.courseIds ?? [];
-  }
 
   /**
    * Resolve the instructor's course IDs and module IDs (non-deleted only).
@@ -70,6 +65,102 @@ class DashboardService {
     return { instructorObjectId, courseIds, moduleIds };
   }
 
+  /**
+   * Resolve the instructor scope, honoring an already-resolved scope when the
+   * caller (e.g. the composite `getDashboardStats`) passes one. This lets the
+   * composite fetch the instructor's course/module IDs once and share them with
+   * all its sub-queries instead of running an identical aggregation per query.
+   * @param {string|import("mongoose").Types.ObjectId} instructorId
+   * @param {InstructorScope} [scope] Optional pre-resolved scope.
+   * @returns {Promise<InstructorScope>}
+   */
+  _resolveScope(instructorId, scope) {
+    return scope ?? this._getCourseScope(instructorId);
+  }
+
+  /**
+   * Aggregate enrollment documents into per-student status buckets.
+   * The first pass groups by student (one row per student), the second counts
+   * status occurrences across those students. Shared by the overview and
+   * engagement analytics so the aggregation lives in a single place.
+   * @param {import("mongoose").Types.ObjectId[]} courseIds
+   * @returns {Promise<{ totalStudents: number, activeStudents: number, completedStudents: number, droppedStudents: number, suspendedStudents: number }>}
+   */
+  async _aggregateEnrollmentStatus(courseIds) {
+    const [stats] = await Enrollment.aggregate([
+      { $match: { course: { $in: courseIds } } },
+      { $group: { _id: "$student", status: { $first: "$status" } } },
+      {
+        $group: {
+          _id: null,
+          totalStudents: { $sum: 1 },
+          activeStudents: {
+            $sum: {
+              $cond: [{ $eq: ["$status", ENROLLMENT_STATUS.ACTIVE] }, 1, 0],
+            },
+          },
+          completedStudents: {
+            $sum: {
+              $cond: [{ $eq: ["$status", ENROLLMENT_STATUS.COMPLETED] }, 1, 0],
+            },
+          },
+          droppedStudents: {
+            $sum: {
+              $cond: [{ $eq: ["$status", ENROLLMENT_STATUS.DROPPED] }, 1, 0],
+            },
+          },
+          suspendedStudents: {
+            $sum: {
+              $cond: [{ $eq: ["$status", ENROLLMENT_STATUS.SUSPENDED] }, 1, 0],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalStudents: 1,
+          activeStudents: 1,
+          completedStudents: 1,
+          droppedStudents: 1,
+          suspendedStudents: 1,
+        },
+      },
+    ]);
+
+    return {
+      totalStudents: stats?.totalStudents ?? 0,
+      activeStudents: stats?.activeStudents ?? 0,
+      completedStudents: stats?.completedStudents ?? 0,
+      droppedStudents: stats?.droppedStudents ?? 0,
+      suspendedStudents: stats?.suspendedStudents ?? 0,
+    };
+  }
+
+  /**
+   * Average completion percentage across progress documents for the given
+   * courses. Shared by the overview and engagement analytics.
+   * @param {import("mongoose").Types.ObjectId[]} courseIds
+   * @returns {Promise<number>}
+   */
+  async _aggregateCompletionRate(courseIds) {
+    const [stats] = await Progress.aggregate([
+      { $match: { course: { $in: courseIds } } },
+      {
+        $group: {
+          _id: null,
+          averageCompletionPercentage: { $avg: "$completionPercentage" },
+        },
+      },
+    ]);
+
+    if (!stats?.averageCompletionPercentage) {
+      return 0;
+    }
+
+    return Number(Number(stats.averageCompletionPercentage).toFixed(2));
+  }
+
   /* ------------------------------------------------------------------------ */
   /*                      Dashboard Overview (GET /)                          */
   /* ------------------------------------------------------------------------ */
@@ -78,7 +169,7 @@ class DashboardService {
    * Summary metrics for the dashboard overview.
    * @param {string} instructorId
    */
-  async getDashboardOverview(instructorId) {
+  async getDashboardOverview(instructorId, _scope) {
     const instructorObjectId = new mongoose.Types.ObjectId(instructorId);
 
     const [courseStats] = await Course.aggregate([
@@ -117,17 +208,9 @@ class DashboardService {
     ]);
 
     const courseIds = courseStats?.courseIds ?? [];
+    const { moduleIds } = await this._resolveScope(instructorId, _scope);
 
-    const modules = await Module.find({
-      course: { $in: courseIds },
-      deletedAt: null,
-    })
-      .select("_id")
-      .lean();
-
-    const moduleIds = modules.map((module) => module._id);
-
-    const [totalLessons, totalQuizzes, studentStats, completionStats] =
+    const [totalLessons, totalQuizzes, studentStats, completionRate] =
       await Promise.all([
         Lesson.countDocuments({
           module: { $in: moduleIds },
@@ -139,43 +222,9 @@ class DashboardService {
           deletedAt: null,
         }),
 
-        Enrollment.aggregate([
-          { $match: { course: { $in: courseIds } } },
-          {
-            $group: {
-              _id: "$student",
-              status: { $first: "$status" },
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              totalStudents: { $sum: 1 },
-              activeStudents: {
-                $sum: {
-                  $cond: [
-                    { $eq: ["$status", ENROLLMENT_STATUS.ACTIVE] },
-                    1,
-                    0,
-                  ],
-                },
-              },
-            },
-          },
-          { $project: { _id: 0, totalStudents: 1, activeStudents: 1 } },
-        ]),
+        this._aggregateEnrollmentStatus(courseIds),
 
-        Progress.aggregate([
-          { $match: { course: { $in: courseIds } } },
-          {
-            $group: {
-              _id: null,
-              averageCompletionPercentage: {
-                $avg: "$completionPercentage",
-              },
-            },
-          },
-        ]),
+        this._aggregateCompletionRate(courseIds),
       ]);
 
     return {
@@ -183,16 +232,14 @@ class DashboardService {
       publishedCourses: courseStats?.publishedCourses ?? 0,
       draftCourses: courseStats?.draftCourses ?? 0,
 
-      totalModules: modules.length,
+      totalModules: moduleIds.length,
       totalLessons,
       totalQuizzes,
 
-      totalStudents: studentStats?.totalStudents ?? 0,
-      activeStudents: studentStats?.activeStudents ?? 0,
+      totalStudents: studentStats.totalStudents,
+      activeStudents: studentStats.activeStudents,
 
-      completionRate: Number(
-        (completionStats?.averageCompletionPercentage ?? 0).toFixed(2)
-      ),
+      completionRate,
     };
   }
 
@@ -203,30 +250,57 @@ class DashboardService {
   /**
    * Paginated list of the instructor's most recent courses.
    * @param {string} instructorId
-   * @param {{ page?: number, limit?: number }} [filters]
+   * @param {{
+   *   page?: number,
+   *   limit?: number,
+   *   search?: string,
+   *   status?: string,
+   *   sortBy?: string,
+   *   sortOrder?: "asc" | "desc",
+   * }} [filters]
    */
   async getRecentCourses(instructorId, filters = {}) {
-    const { page = 1, limit = 5 } = filters;
+    const {
+      page = DEFAULT_PAGE,
+      limit = DEFAULT_RECENT_COURSES_LIMIT,
+      search,
+      status,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = filters;
     const instructorObjectId = new mongoose.Types.ObjectId(instructorId);
     const skip = (page - 1) * limit;
 
+    const filter = {
+      instructor: instructorObjectId,
+      isDeleted: false,
+    };
+
+    // Free-text filter over title/slug (case-insensitive substring).
+    if (search) {
+      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      filter.$or = [{ title: regex }, { slug: regex }];
+    }
+
+    // Optional status filter; accepts lowercase values like the Course schema.
+    if (status && status in COURSE_STATUS) {
+      filter.status = COURSE_STATUS[status];
+    }
+
+    // Whitelist sortable fields to avoid arbitrary projection injection.
+    const sortableFields = new Set(["createdAt", "updatedAt", "title"]);
+    const direction = sortOrder === "asc" ? 1 : -1;
+    const sortField = sortableFields.has(sortBy) ? sortBy : "createdAt";
+
     const [courses, totalCourses] = await Promise.all([
-      Course.find({
-        instructor: instructorObjectId,
-        isDeleted: false,
-      })
-        .select(
-          "title slug status thumbnail statistics.totalEnrollments statistics.averageRating createdAt"
-        )
-        .sort({ createdAt: -1 })
+      Course.find(filter)
+        .select(COURSE_LIST_PROJECTION)
+        .sort({ [sortField]: direction })
         .skip(skip)
         .limit(Number(limit))
         .lean(),
 
-      Course.countDocuments({
-        instructor: instructorObjectId,
-        isDeleted: false,
-      }),
+      Course.countDocuments(filter),
     ]);
 
     return {
@@ -249,9 +323,12 @@ class DashboardService {
    * @param {string} instructorId
    * @param {{ page?: number, limit?: number }} [filters]
    */
-  async getRecentEnrollments(instructorId, filters = {}) {
-    const { page = 1, limit = 10 } = filters;
-    const courseIds = await this._getCourseIds(instructorId);
+  async getRecentEnrollments(instructorId, filters = {}, _scope) {
+    const {
+      page = DEFAULT_PAGE,
+      limit = DEFAULT_RECENT_ENROLLMENTS_LIMIT,
+    } = filters;
+    const courseIds = (await this._resolveScope(instructorId, _scope)).courseIds;
     const skip = (page - 1) * limit;
 
     const [enrollments, totalEnrollments] = await Promise.all([
@@ -261,6 +338,7 @@ class DashboardService {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit))
+        .read("secondaryPreferred")
         .lean(),
 
       Enrollment.countDocuments({ course: { $in: courseIds } }),
@@ -284,9 +362,9 @@ class DashboardService {
   /**
    * Top-performing courses by enrollment count and rating.
    * @param {string} instructorId
-   * @param {number} [limit=5]
+   * @param {number} [limit=DEFAULT_TOP_COURSES_LIMIT]
    */
-  async getTopCourses(instructorId, limit = 5) {
+  async getTopCourses(instructorId, limit = DEFAULT_TOP_COURSES_LIMIT) {
     const instructorObjectId = new mongoose.Types.ObjectId(instructorId);
 
     return Course.aggregate([
@@ -365,9 +443,9 @@ class DashboardService {
    * @param {string} instructorId
    * @param {{ year?: number }} [filters]
    */
-  async getMonthlyEnrollments(instructorId, filters = {}) {
+  async getMonthlyEnrollments(instructorId, filters = {}, _scope) {
     const { year } = filters;
-    const courseIds = await this._getCourseIds(instructorId);
+    const courseIds = (await this._resolveScope(instructorId, _scope)).courseIds;
 
     const match = { course: { $in: courseIds } };
 
@@ -415,93 +493,20 @@ class DashboardService {
    * High-level student engagement statistics.
    * @param {string} instructorId
    */
-  async getEngagementStats(instructorId) {
-    const courseIds = await this._getCourseIds(instructorId);
+  async getEngagementStats(instructorId, _scope) {
+    const courseIds = (await this._resolveScope(instructorId, _scope)).courseIds;
 
-    const [studentStats, completionStats] = await Promise.all([
-      Enrollment.aggregate([
-        { $match: { course: { $in: courseIds } } },
-        {
-          $group: {
-            _id: "$student",
-            status: { $first: "$status" },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            totalStudents: { $sum: 1 },
-            activeStudents: {
-              $sum: {
-                $cond: [
-                  { $eq: ["$status", ENROLLMENT_STATUS.ACTIVE] },
-                  1,
-                  0,
-                ],
-              },
-            },
-            completedStudents: {
-              $sum: {
-                $cond: [
-                  { $eq: ["$status", ENROLLMENT_STATUS.COMPLETED] },
-                  1,
-                  0,
-                ],
-              },
-            },
-            droppedStudents: {
-              $sum: {
-                $cond: [
-                  { $eq: ["$status", ENROLLMENT_STATUS.DROPPED] },
-                  1,
-                  0,
-                ],
-              },
-            },
-            suspendedStudents: {
-              $sum: {
-                $cond: [
-                  { $eq: ["$status", ENROLLMENT_STATUS.SUSPENDED] },
-                  1,
-                  0,
-                ],
-              },
-            },
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            totalStudents: 1,
-            activeStudents: 1,
-            completedStudents: 1,
-            droppedStudents: 1,
-            suspendedStudents: 1,
-          },
-        },
-      ]),
-
-      Progress.aggregate([
-        { $match: { course: { $in: courseIds } } },
-        {
-          $group: {
-            _id: null,
-            averageCompletionPercentage: {
-              $avg: "$completionPercentage",
-            },
-          },
-        },
-      ]),
+    const [studentStats, averageCompletionRate] = await Promise.all([
+      this._aggregateEnrollmentStatus(courseIds),
+      this._aggregateCompletionRate(courseIds),
     ]);
 
     return {
-      activeStudents: studentStats?.activeStudents ?? 0,
-      completedStudents: studentStats?.completedStudents ?? 0,
-      droppedStudents: studentStats?.droppedStudents ?? 0,
-      suspendedStudents: studentStats?.suspendedStudents ?? 0,
-      averageCompletionRate: Number(
-        (completionStats?.averageCompletionPercentage ?? 0).toFixed(2)
-      ),
+      activeStudents: studentStats.activeStudents,
+      completedStudents: studentStats.completedStudents,
+      droppedStudents: studentStats.droppedStudents,
+      suspendedStudents: studentStats.suspendedStudents,
+      averageCompletionRate,
     };
   }
 
@@ -540,26 +545,45 @@ class DashboardService {
 
   /**
    * Items that require the instructor's attention.
+   *
+   * Each bucket is returned as `{ count, items }` so the frontend can render
+   * previews immediately without additional API calls. `items` are limited to
+   * a small preview window.
    * @param {string} instructorId
+   * @param {{ previewLimit?: number }} [options]
    */
-  async getActionCenter(instructorId) {
-    const { courseIds, moduleIds } = await this._getCourseScope(instructorId);
+  async getActionCenter(instructorId, options = {}, _scope) {
+    const { previewLimit = 5 } = options;
+    const { courseIds, moduleIds } = await this._resolveScope(instructorId, _scope);
     const instructorObjectId = new mongoose.Types.ObjectId(instructorId);
 
     const [
-      draftCourses,
+      draftCourseDocs,
       unpublishedModules,
       unpublishedLessons,
-      unpublishedQuizzes,
+      unpublishedQuizDocs,
       coursesWithoutModules,
       modulesWithoutLessons,
       coursesReadyToPublish,
     ] = await Promise.all([
-      Course.countDocuments({
-        instructor: instructorObjectId,
-        isDeleted: false,
-        status: COURSE_STATUS.DRAFT,
-      }),
+      // Draft courses (with preview items).
+      Promise.all([
+        Course.find({
+          instructor: instructorObjectId,
+          isDeleted: false,
+          status: COURSE_STATUS.DRAFT,
+        })
+          .select("title slug thumbnail status updatedAt")
+          .sort({ updatedAt: -1 })
+          .limit(Number(previewLimit))
+          .lean(),
+
+        Course.countDocuments({
+          instructor: instructorObjectId,
+          isDeleted: false,
+          status: COURSE_STATUS.DRAFT,
+        }),
+      ]),
 
       Module.countDocuments({
         course: { $in: courseIds },
@@ -573,11 +597,24 @@ class DashboardService {
         status: LESSON_STATUS_ENUM.DRAFT,
       }),
 
-      Quiz.countDocuments({
-        course: { $in: courseIds },
-        deletedAt: null,
-        status: "DRAFT",
-      }),
+      // Draft quizzes (with preview items).
+      Promise.all([
+        Quiz.find({
+          course: { $in: courseIds },
+          deletedAt: null,
+          status: QUIZ_STATUS.DRAFT,
+        })
+          .select("title course status updatedAt")
+          .sort({ updatedAt: -1 })
+          .limit(Number(previewLimit))
+          .lean(),
+
+        Quiz.countDocuments({
+          course: { $in: courseIds },
+          deletedAt: null,
+          status: QUIZ_STATUS.DRAFT,
+        }),
+      ]),
 
       Course.aggregate([
         {
@@ -665,7 +702,7 @@ class DashboardService {
                 $filter: {
                   input: "$quizzes",
                   as: "quiz",
-                  cond: { $eq: ["$$quiz.status", "PUBLISHED"] },
+                  cond: { $eq: ["$$quiz.status", QUIZ_STATUS.PUBLISHED] },
                 },
               },
             },
@@ -683,10 +720,22 @@ class DashboardService {
     ]);
 
     return {
-      draftCourses,
-      unpublishedModules,
-      unpublishedLessons,
-      unpublishedQuizzes,
+      draftCourses: {
+        count: draftCourseDocs[1],
+        items: draftCourseDocs[0],
+      },
+      unpublishedModules: {
+        count: unpublishedModules,
+        items: [],
+      },
+      unpublishedLessons: {
+        count: unpublishedLessons,
+        items: [],
+      },
+      unpublishedQuizzes: {
+        count: unpublishedQuizDocs[1],
+        items: unpublishedQuizDocs[0],
+      },
       coursesWithoutModules: coursesWithoutModules[0]?.count ?? 0,
       modulesWithoutLessons: modulesWithoutLessons[0]?.count ?? 0,
       coursesReadyToPublish: coursesReadyToPublish[0]?.count ?? 0,
@@ -703,6 +752,10 @@ class DashboardService {
    * @param {string} instructorId
    */
   async getDashboardStats(instructorId) {
+    // Resolve the instructor's courses/modules once so every contained query
+    // shares a single scope lookup instead of re-running identical aggregations.
+    const scope = await this._getCourseScope(instructorId);
+
     const [
       overview,
       recentCourses,
@@ -713,18 +766,24 @@ class DashboardService {
       earnings,
       actionCenter,
     ] = await Promise.all([
-      this.getDashboardOverview(instructorId),
-      this.getRecentCourses(instructorId, { page: 1, limit: 5 }),
-      this.getRecentEnrollments(instructorId, { page: 1, limit: 10 }),
-      this.getMonthlyEnrollments(instructorId),
-      this.getTopCourses(instructorId, 5),
-      this.getEngagementStats(instructorId),
+      this.getDashboardOverview(instructorId, scope),
+      this.getRecentCourses(instructorId, {
+        page: DEFAULT_PAGE,
+        limit: DEFAULT_RECENT_COURSES_LIMIT,
+      }),
+      this.getRecentEnrollments(instructorId, {
+        page: DEFAULT_PAGE,
+        limit: DEFAULT_RECENT_ENROLLMENTS_LIMIT,
+      }, scope),
+      this.getMonthlyEnrollments(instructorId, {}, scope),
+      this.getTopCourses(instructorId, DEFAULT_TOP_COURSES_LIMIT),
+      this.getEngagementStats(instructorId, scope),
       this.getEarningsStats(instructorId),
-      this.getActionCenter(instructorId),
+      this.getActionCenter(instructorId, {}, scope),
     ]);
 
     return {
-      ...overview,
+      overview,
       recentCourses: recentCourses.courses,
       recentEnrollments: recentEnrollments.enrollments,
       monthlyEnrollments: monthly.monthlyEnrollments,

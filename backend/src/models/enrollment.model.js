@@ -98,6 +98,9 @@ enrollmentSchema.index(
 // Instructor/admin lookups: all students enrolled in a given course
 enrollmentSchema.index({ course: 1, status: 1 });
 
+// Recent-enrollments dashboard: list a course's enrollments newest-first
+enrollmentSchema.index({ course: 1, createdAt: -1 });
+
 // Admin dashboards: filter by status
 enrollmentSchema.index({ status: 1 });
 
