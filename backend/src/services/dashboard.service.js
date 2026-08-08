@@ -1,16 +1,21 @@
 import mongoose from "mongoose";
 
+import User from "../models/user.model.js";
 import Course from "../models/course.model.js";
 import Module from "../models/module.model.js";
 import Lesson from "../models/lesson.model.js";
 import Quiz, { QUIZ_STATUS } from "../models/quiz.model.js";
+import Question from "../models/question.model.js";
 import Enrollment from "../models/enrollment.model.js";
 import Progress from "../models/progress.model.js";
+import Attempt from "../models/attempt.model.js";
 
 import { COURSE_STATUS } from "../constants/course.constants.js";
 import { ENROLLMENT_STATUS } from "../constants/enrollment.constants.js";
 import { MODULE_STATUS } from "../constants/module.constants.js";
 import { LESSON_STATUS_ENUM } from "../constants/lesson.constants.js";
+import { ATTEMPT_STATUS } from "../constants/attempt.constants.js";
+import constants from "../config/constants.js";
 
 /* ---------------------------- Shared constants ---------------------------- */
 
@@ -19,6 +24,18 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_RECENT_COURSES_LIMIT = 5;
 const DEFAULT_RECENT_ENROLLMENTS_LIMIT = 10;
 const DEFAULT_TOP_COURSES_LIMIT = 5;
+
+/** How many of the most recent registrations to include in user analytics. */
+const RECENT_USERS_LIMIT = 10;
+
+/** Default cap for analytics list helpers (popular, rated, recent, etc.). */
+const DEFAULT_ANALYTICS_LIMIT = 10;
+
+/** How many of the most recent activities to include from each collection. */
+const RECENT_ACTIVITY_PER_SOURCE = 10;
+
+/** Total number of activities returned by the recent-activity timeline. */
+const RECENT_ACTIVITY_TOTAL = 20;
 
 /** Course fields projected for list-style dashboard responses. */
 const COURSE_LIST_PROJECTION =
@@ -76,6 +93,484 @@ class DashboardService {
    */
   _resolveScope(instructorId, scope) {
     return scope ?? this._getCourseScope(instructorId);
+  }
+
+  /**
+   * Platform-wide user summary counts.
+   *
+   * Shared by the admin overview and the user analytics so the user metrics
+   * live in a single place and future additions (e.g. verifiedUsers) only need
+   * to be made here.
+   * @returns {Promise<{ totalUsers: number, totalStudents: number, totalInstructors: number, totalAdmins: number, activeUsers: number, blockedUsers: number }>}
+   */
+  async _getUserSummary() {
+    const [
+      totalUsers,
+      totalStudents,
+      totalInstructors,
+      totalAdmins,
+      activeUsers,
+      blockedUsers,
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ role: constants.ROLES.STUDENT }),
+      User.countDocuments({ role: constants.ROLES.INSTRUCTOR }),
+      User.countDocuments({ role: constants.ROLES.ADMIN }),
+      User.countDocuments({ isActive: true }),
+      User.countDocuments({ isBlocked: true }),
+    ]);
+
+    return {
+      totalUsers,
+      totalStudents,
+      totalInstructors,
+      totalAdmins,
+      activeUsers,
+      blockedUsers,
+    };
+  }
+
+  /**
+   * Get monthly document counts grouped by the document's `createdAt` year +
+   * month. Reusable across analytics (users, courses, enrollments, etc.) so a
+   * single helper powers every "per month" chart instead of six near-identical
+   * pipelines.
+   *
+   * Returns clean objects (the `_id` wrapping is flattened away) like:
+   * `[{ year: 2026, month: 1, count: 15 }, ...]`, sorted ascending.
+   *
+   * @param {import("mongoose").Model} model
+   * @param {Object} [match={}] Optional match filter applied before grouping.
+   * @returns {Promise<Array<{ year: number, month: number, count: number }>>}
+   */
+  async _getMonthlyCounts(model, match = {}) {
+    const results = await model.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1 } },
+    ]);
+
+    return results.map((item) => ({
+      year: item._id.year,
+      month: item._id.month,
+      count: item.count,
+    }));
+  }
+
+  /**
+   * Platform-wide course summary counts.
+   *
+   * Shared by the admin overview and the course analytics so the course
+   * metrics live in a single place. Excludes soft-deleted courses
+   * (`isDeleted: false`), since `countDocuments` does not run find middleware.
+   * @returns {Promise<{ totalCourses: number, publishedCourses: number, draftCourses: number, archivedCourses: number }>}
+   */
+  async _getCourseSummary() {
+    const [
+      totalCourses,
+      publishedCourses,
+      draftCourses,
+      archivedCourses,
+    ] = await Promise.all([
+      Course.countDocuments({ isDeleted: false }),
+      Course.countDocuments({ isDeleted: false, status: COURSE_STATUS.PUBLISHED }),
+      Course.countDocuments({ isDeleted: false, status: COURSE_STATUS.DRAFT }),
+      Course.countDocuments({ isDeleted: false, status: COURSE_STATUS.ARCHIVED }),
+    ]);
+
+    return {
+      totalCourses,
+      publishedCourses,
+      draftCourses,
+      archivedCourses,
+    };
+  }
+
+  /**
+   * Platform-wide enrollment summary counts.
+   *
+   * Shared by the admin overview and the enrollment analytics so the
+   * enrollment metrics live in a single place. Enrollment has no soft-delete.
+   * @returns {Promise<{ totalEnrollments: number, activeEnrollments: number, completedEnrollments: number }>}
+   */
+  async _getEnrollmentSummary() {
+    const [totalEnrollments, activeEnrollments, completedEnrollments] =
+      await Promise.all([
+        Enrollment.countDocuments(),
+        Enrollment.countDocuments({ status: ENROLLMENT_STATUS.ACTIVE }),
+        Enrollment.countDocuments({ status: ENROLLMENT_STATUS.COMPLETED }),
+      ]);
+
+    return {
+      totalEnrollments,
+      activeEnrollments,
+      completedEnrollments,
+    };
+  }
+
+  /**
+   * Courses that don't have any modules (platform-wide).
+   *
+   * Uses a `$lookup` aggregation instead of an N+1 loop. Most modules are
+   * soft-deleted via `deletedAt: null`, so only non-deleted modules count as
+   * "having modules".
+   * @returns {Promise<Array<{ _id, title, slug, status, createdAt }>>}
+   */
+  async _getCoursesWithoutModules() {
+    return Course.aggregate([
+      { $match: { isDeleted: false } },
+      {
+        $lookup: {
+          from: "modules",
+          localField: "_id",
+          foreignField: "course",
+          let: { courseId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$course", "$$courseId"] }, deletedAt: null } },
+          ],
+          as: "modules",
+        },
+      },
+      { $match: { modules: { $size: 0 } } },
+      {
+        $project: {
+          title: 1,
+          slug: 1,
+          status: 1,
+          createdAt: 1,
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Modules that don't contain any lessons (platform-wide).
+   *
+   * Uses a `$lookup` aggregation (no N+1). Only non-soft-deleted modules and
+   * lessons count, so a module whose lessons were all deleted is correctly
+   * flagged. Populates the parent course title/slug for immediate use.
+   * @returns {Promise<Array<{ _id, title, order, createdAt, course: { _id, title, slug } }>>}
+   */
+  async _getModulesWithoutLessons() {
+    return Module.aggregate([
+      { $match: { deletedAt: null } },
+      {
+        $lookup: {
+          from: "lessons",
+          localField: "_id",
+          foreignField: "module",
+          let: { moduleId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$module", "$$moduleId"] }, isDeleted: false } },
+          ],
+          as: "lessons",
+        },
+      },
+      { $match: { lessons: { $size: 0 } } },
+      {
+        $lookup: {
+          from: "courses",
+          localField: "course",
+          foreignField: "_id",
+          as: "course",
+        },
+      },
+      { $unwind: "$course" },
+      {
+        $project: {
+          title: 1,
+          order: 1,
+          createdAt: 1,
+          course: {
+            _id: "$course._id",
+            title: "$course.title",
+            slug: "$course.slug",
+          },
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Lessons that have no meaningful content for their lesson type
+   * (platform-wide).
+   *
+   * The Lesson schema stores content in a typed sub-document (`content.video`,
+   * `content.text`, `content.pdf`, `content.audio`, `content.externalLink`).
+   * A lesson is considered empty when its type-specific sub-document is
+   * missing/null, or its required field (e.g. `url`/`body`) is empty/null.
+   *
+   * Uses a single aggregation (no N+1) and populates the parent module + course.
+   * @returns {Promise<Array<{ _id, title, order, lessonType, createdAt, module: { _id, title, course: { _id, title, slug } } }>>}
+   */
+  async _getLessonsWithoutContent() {
+    return Lesson.aggregate([
+      { $match: { isDeleted: false } },
+      {
+        $match: {
+          $or: [
+            {
+              lessonType: "VIDEO",
+              $or: [
+                { "content.video": { $exists: false } },
+                { "content.video": null },
+                { "content.video.url": { $in: ["", null] } },
+              ],
+            },
+            {
+              lessonType: "TEXT",
+              $or: [
+                { "content.text": { $exists: false } },
+                { "content.text": null },
+                { "content.text.body": { $in: ["", null] } },
+              ],
+            },
+            {
+              lessonType: "PDF",
+              $or: [
+                { "content.pdf": { $exists: false } },
+                { "content.pdf": null },
+                { "content.pdf.url": { $in: ["", null] } },
+              ],
+            },
+            {
+              lessonType: "AUDIO",
+              $or: [
+                { "content.audio": { $exists: false } },
+                { "content.audio": null },
+                { "content.audio.url": { $in: ["", null] } },
+              ],
+            },
+            {
+              lessonType: "EXTERNAL_LINK",
+              $or: [
+                { "content.externalLink": { $exists: false } },
+                { "content.externalLink": null },
+                { "content.externalLink.url": { $in: ["", null] } },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        $lookup: {
+          from: "modules",
+          localField: "module",
+          foreignField: "_id",
+          as: "module",
+        },
+      },
+      { $unwind: { path: "$module", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "courses",
+          localField: "module.course",
+          foreignField: "_id",
+          as: "module.course",
+        },
+      },
+      { $unwind: { path: "$module.course", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          title: 1,
+          order: 1,
+          lessonType: 1,
+          createdAt: 1,
+          module: {
+            _id: "$module._id",
+            title: "$module.title",
+            course: {
+              _id: "$module.course._id",
+              title: "$module.course.title",
+              slug: "$module.course.slug",
+            },
+          },
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Draft courses that are ready for review/publishing.
+   *
+   * Simple rule: course is in DRAFT and has at least one (non-soft-deleted)
+   * module. This can be strengthened later (all modules have lessons,
+   * thumbnail present, pricing complete, etc.) without changing the API shape.
+   * @returns {Promise<Array<{ _id, title, slug, status, createdAt, totalModules }>>}
+   */
+  async _getDraftCoursesReadyForPublishing() {
+    return Course.aggregate([
+      { $match: { isDeleted: false, status: COURSE_STATUS.DRAFT } },
+      {
+        $lookup: {
+          from: "modules",
+          localField: "_id",
+          foreignField: "course",
+          let: { courseId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$course", "$$courseId"] }, deletedAt: null } },
+          ],
+          as: "modules",
+        },
+      },
+      { $match: { "modules.0": { $exists: true } } },
+      {
+        $project: {
+          title: 1,
+          slug: 1,
+          status: 1,
+          createdAt: 1,
+          totalModules: { $size: "$modules" },
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Most popular courses by enrollment count.
+   *
+   * Groups enrollments by course, counts them, sorts descending, then joins
+   * the course details. Popularity is based on actual enrollments — not views
+   * or creation date.
+   * @param {number} [limit=DEFAULT_ANALYTICS_LIMIT]
+   * @returns {Promise<Array<{ _id, title, slug, thumbnail, status, totalEnrollments }>>}
+   */
+  async _getMostPopularCourses(limit = DEFAULT_ANALYTICS_LIMIT) {
+    return Enrollment.aggregate([
+      {
+        $group: {
+          _id: "$course",
+          totalEnrollments: { $sum: 1 },
+        },
+      },
+      { $sort: { totalEnrollments: -1 } },
+      { $limit: Number(limit) },
+      {
+        $lookup: {
+          from: "courses",
+          localField: "_id",
+          foreignField: "_id",
+          as: "course",
+        },
+      },
+      { $unwind: "$course" },
+      {
+        $project: {
+          _id: "$course._id",
+          title: "$course.title",
+          slug: "$course.slug",
+          thumbnail: "$course.thumbnail",
+          status: "$course.status",
+          totalEnrollments: 1,
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Least popular courses by enrollment count.
+   *
+   * Aggregates from the Course collection (not Enrollment) so courses with
+   * zero enrollments are included — those are usually the ones an admin needs
+   * to identify. Sorted by fewest enrollments first, then most recently
+   * created, to break ties predictably.
+   * @param {number} [limit=DEFAULT_ANALYTICS_LIMIT]
+   * @returns {Promise<Array<{ _id, title, slug, thumbnail, status, totalEnrollments }>>}
+   */
+  async _getLeastPopularCourses(limit = DEFAULT_ANALYTICS_LIMIT) {
+    return Course.aggregate([
+      { $match: { isDeleted: false } },
+      {
+        $lookup: {
+          from: "enrollments",
+          localField: "_id",
+          foreignField: "course",
+          as: "enrollments",
+        },
+      },
+      {
+        $addFields: {
+          totalEnrollments: { $size: "$enrollments" },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          slug: 1,
+          status: 1,
+          thumbnail: 1,
+          totalEnrollments: 1,
+        },
+      },
+      { $sort: { totalEnrollments: 1, createdAt: -1 } },
+      { $limit: Number(limit) },
+    ]);
+  }
+
+  /**
+   * Most recently published courses.
+   *
+   * Uses the Course `publishedAt` timestamp (set when a course transitions to
+   * PUBLISHED), sorting newest-first. Populates the instructor so admins know
+   * who published each course without an extra API call.
+   * @param {number} [limit=DEFAULT_ANALYTICS_LIMIT]
+   * @returns {Promise<Array>}
+   */
+  async _getRecentlyPublishedCourses(limit = DEFAULT_ANALYTICS_LIMIT) {
+    return Course.find({
+      isDeleted: false,
+      status: COURSE_STATUS.PUBLISHED,
+    })
+      .sort({ publishedAt: -1 })
+      .limit(Number(limit))
+      .select("title slug instructor thumbnail publishedAt createdAt updatedAt")
+      .populate({
+        path: "instructor",
+        select: "fullName email",
+      })
+      .lean();
+  }
+
+  /**
+   * Most recently created courses, regardless of status.
+   *
+   * Sorted by creation date (newest first). Populates the instructor so the
+   * frontend has the author details without an extra API call.
+   * @param {number} [limit=DEFAULT_ANALYTICS_LIMIT]
+   * @returns {Promise<Array>}
+   */
+  async _getRecentlyCreatedCourses(limit = DEFAULT_ANALYTICS_LIMIT) {
+    return Course.find({ isDeleted: false })
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .select("title slug status instructor thumbnail createdAt")
+      .populate({
+        path: "instructor",
+        select: "fullName email",
+      })
+      .lean();
+  }
+
+  /**
+   * Highest rated courses.
+   *
+   * TODO: Replace with an actual aggregation once the Review module is
+   * implemented. Deliberately returns an empty array rather than faking
+   * ratings that don't exist yet.
+   * @returns {Promise<Array>}
+   */
+  // eslint-disable-next-line no-unused-vars
+  async _getHighestRatedCourses() {
+    return [];
   }
 
   /**
@@ -790,6 +1285,675 @@ class DashboardService {
       topCourses,
       engagement,
       earnings,
+      actionCenter,
+    };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                         Admin Overview                                   */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Platform-wide overview for admins.
+   *
+   * High-level KPIs only. Detailed analytics (growth, charts, recent
+   * activity, etc.) are handled by dedicated endpoints later.
+   *
+   * @returns {Promise<{
+   *   users: { totalUsers, totalStudents, totalInstructors, totalAdmins, activeUsers, blockedUsers },
+   *   courses: { totalCourses, publishedCourses, draftCourses, archivedCourses },
+   *   content: { totalModules, totalLessons, totalQuizzes, totalQuestions },
+   *   enrollments: { totalEnrollments, activeEnrollments, completedEnrollments },
+   *   completions: { totalCourseCompletions }
+   * }>}
+   */
+  async getAdminOverview() {
+    // Content & completion statistics run in parallel via Promise.all; user,
+    // course, and enrollment summaries are provided by their shared helpers.
+    const [totalModules, totalLessons, totalQuizzes, totalQuestions, totalCourseCompletions] =
+      await Promise.all([
+        Module.countDocuments({ deletedAt: null }),
+        Lesson.countDocuments({ isDeleted: false }),
+        Quiz.countDocuments({ deletedAt: null }),
+        Question.countDocuments({ deletedAt: null }),
+        Progress.countDocuments({ isCourseCompleted: true }),
+      ]);
+
+    const [users, courses, enrollments] = await Promise.all([
+      this._getUserSummary(),
+      this._getCourseSummary(),
+      this._getEnrollmentSummary(),
+    ]);
+
+    return {
+      users,
+
+      courses,
+
+      content: {
+        totalModules,
+        totalLessons,
+        totalQuizzes,
+        totalQuestions,
+      },
+
+      enrollments,
+
+      completions: {
+        totalCourseCompletions,
+      },
+    };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                             User Analytics                               */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * User analytics for admins.
+   *
+   * Grouped response so the frontend can consume growth/trend data easily.
+   * Detailed queries (new users per month, growth, recent users) are added
+   * incrementally.
+   *
+   * @param {Object} query
+   * @returns {Promise<{
+   *   summary: { totalUsers, totalStudents, totalInstructors, totalAdmins, activeUsers, blockedUsers },
+   *   growth: { users: [], students: [], instructors: [] },
+   *   recentRegistrations: [],
+   *   recentlyActiveUsers: []
+   * }>}
+   */
+  async getUserAnalytics(query) {
+    const [
+      summary,
+      newUsersPerMonth,
+      studentGrowth,
+      instructorGrowth,
+      recentRegistrations,
+      recentlyActiveUsers,
+    ] = await Promise.all([
+      this._getUserSummary(),
+      this._getMonthlyCounts(User),
+      this._getMonthlyCounts(User, { role: constants.ROLES.STUDENT }),
+      this._getMonthlyCounts(User, { role: constants.ROLES.INSTRUCTOR }),
+
+      // Latest registrations (lightweight, read-only, plain JS objects).
+      User.find({ isDeleted: false })
+        .sort({ createdAt: -1 })
+        .limit(RECENT_USERS_LIMIT)
+        .select("fullName email avatar role isActive isEmailVerified createdAt")
+        .lean(),
+
+      // Most recently active users, based on `lastLogin` (only users who have
+      // logged in at least once).
+      User.find({ lastLogin: { $exists: true }, isDeleted: false })
+        .sort({ lastLogin: -1 })
+        .limit(RECENT_USERS_LIMIT)
+        .select("fullName email avatar role isActive lastLogin")
+        .lean(),
+    ]);
+
+    return {
+      summary,
+
+      growth: {
+        users: newUsersPerMonth,
+        students: studentGrowth,
+        instructors: instructorGrowth,
+      },
+
+      recentRegistrations,
+
+      recentlyActiveUsers,
+    };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                            Course Analytics                              */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Course analytics for admins.
+   *
+   * @param {Object} query
+   * @returns {Promise<{
+   *   summary: { totalCourses, publishedCourses, draftCourses, archivedCourses },
+   *   popularCourses: [],
+   *   leastPopularCourses: [],
+   *   highestRatedCourses: [],
+   *   recentlyPublishedCourses: [],
+   *   recentlyCreatedCourses: []
+   * }>}
+   */
+  async getCourseAnalytics(query) {
+    const [
+      summary,
+      popularCourses,
+      leastPopularCourses,
+      highestRatedCourses,
+      recentlyPublishedCourses,
+      recentlyCreatedCourses,
+    ] = await Promise.all([
+      this._getCourseSummary(),
+      this._getMostPopularCourses(),
+      this._getLeastPopularCourses(),
+      this._getHighestRatedCourses(),
+      this._getRecentlyPublishedCourses(),
+      this._getRecentlyCreatedCourses(),
+    ]);
+
+    return {
+      summary,
+
+      popularCourses,
+
+      leastPopularCourses,
+
+      highestRatedCourses,
+
+      recentlyPublishedCourses,
+
+      recentlyCreatedCourses,
+    };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                         Enrollment Analytics                             */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Enrollment analytics for admins.
+   *
+   * Focused on enrollment trends and completion (completion rate, drop rate),
+   * not course details.
+   *
+   * @param {Object} query
+   * @returns {Promise<{
+   *   summary: { totalEnrollments, activeEnrollments, completedEnrollments },
+   *   monthlyEnrollments: [],
+   *   completionRate: {},
+   *   dropRate: {}
+   * }>}
+   */
+  async getEnrollmentAnalytics(query) {
+    const [summary, monthlyEnrollments, droppedEnrollments] = await Promise.all([
+      this._getEnrollmentSummary(),
+      this._getMonthlyCounts(Enrollment),
+      Enrollment.countDocuments({ status: ENROLLMENT_STATUS.DROPPED }),
+    ]);
+
+    // Completion rate derived from the already-fetched summary — no extra query.
+    const completionRate =
+      summary.totalEnrollments === 0
+        ? 0
+        : Number(
+            ((summary.completedEnrollments / summary.totalEnrollments) * 100).toFixed(2)
+          );
+
+    const dropRate =
+      summary.totalEnrollments === 0
+        ? 0
+        : Number(((droppedEnrollments / summary.totalEnrollments) * 100).toFixed(2));
+
+    return {
+      summary,
+
+      monthlyEnrollments,
+
+      completionRate: {
+        percentage: completionRate,
+        completed: summary.completedEnrollments,
+        total: summary.totalEnrollments,
+      },
+
+      dropRate: {
+        percentage: dropRate,
+        dropped: droppedEnrollments,
+        total: summary.totalEnrollments,
+      },
+    };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                            Platform Health                               */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Platform health for admins.
+   *
+   * Surfaces issues that require attention using aggregation pipelines (not
+   * N+1 loops). Flagged items are derived from the issue buckets.
+   *
+   * @returns {Promise<{
+   *   overview: { totalIssues: number, publishReadyCourses: number },
+   *   issues: {
+   *     coursesWithoutModules: [],
+   *     modulesWithoutLessons: [],
+   *     lessonsWithoutContent: [],
+   *     draftCoursesReadyForPublishing: [],
+   *     flaggedItems: []
+   *   }
+   * }>}
+   */
+  async getPlatformHealth() {
+    const [
+      coursesWithoutModules,
+      modulesWithoutLessons,
+      lessonsWithoutContent,
+      draftCoursesReadyForPublishing,
+    ] = await Promise.all([
+      this._getCoursesWithoutModules(),
+      this._getModulesWithoutLessons(),
+      this._getLessonsWithoutContent(),
+      this._getDraftCoursesReadyForPublishing(),
+    ]);
+
+    const issues = {
+      coursesWithoutModules,
+      modulesWithoutLessons,
+      lessonsWithoutContent,
+      draftCoursesReadyForPublishing,
+    };
+
+    const overview = {
+      totalIssues:
+        coursesWithoutModules.length +
+        modulesWithoutLessons.length +
+        lessonsWithoutContent.length,
+      publishReadyCourses: draftCoursesReadyForPublishing.length,
+    };
+
+    return {
+      overview,
+
+      issues: {
+        ...issues,
+        flaggedItems: this._buildFlaggedItems(issues),
+      },
+    };
+  }
+
+  /**
+   * Build a consolidated list of platform issues from the issue buckets.
+   *
+   * Generated dynamically (not stored) so it always stays consistent with the
+   * underlying data.
+   * @param {{
+   *   coursesWithoutModules: Array,
+   *   modulesWithoutLessons: Array,
+   *   lessonsWithoutContent: Array,
+   *   draftCoursesReadyForPublishing: Array
+   * }} issues
+   * @returns {Array<{ type: string, severity: "HIGH"|"MEDIUM"|"LOW", count: number }>}
+   */
+  _buildFlaggedItems(issues) {
+    const flaggedItems = [];
+
+    if (issues.coursesWithoutModules.length) {
+      flaggedItems.push({
+        type: "COURSES_WITHOUT_MODULES",
+        severity: "HIGH",
+        count: issues.coursesWithoutModules.length,
+      });
+    }
+
+    if (issues.modulesWithoutLessons.length) {
+      flaggedItems.push({
+        type: "MODULES_WITHOUT_LESSONS",
+        severity: "HIGH",
+        count: issues.modulesWithoutLessons.length,
+      });
+    }
+
+    if (issues.lessonsWithoutContent.length) {
+      flaggedItems.push({
+        type: "LESSONS_WITHOUT_CONTENT",
+        severity: "MEDIUM",
+        count: issues.lessonsWithoutContent.length,
+      });
+    }
+
+    if (issues.draftCoursesReadyForPublishing.length) {
+      flaggedItems.push({
+        type: "COURSES_READY_TO_PUBLISH",
+        severity: "LOW",
+        count: issues.draftCoursesReadyForPublishing.length,
+      });
+    }
+
+    return flaggedItems;
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                            Revenue Analytics                             */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Revenue analytics for admins.
+   *
+   * Placeholder: the Payments module is not implemented yet, so the response
+   * shape is fixed up-front with zeroed values. This lets the frontend
+   * integrate now and later plugs into Stripe/Razorpay/PayPal without changing
+   * the API contract.
+   *
+   * @param {Object} query
+   * @returns {Promise<{
+   *   overview: { totalRevenue, monthlyRevenue, yearlyRevenue, averageOrderValue },
+   *   monthlyRevenue: [],
+   *   topSellingCourses: [],
+   *   transactions: [],
+   *   paymentMethods: [],
+   *   refunds: { totalRefunds, refundedAmount }
+   * }>}
+   */
+  // eslint-disable-next-line no-unused-vars
+  async getRevenueAnalytics(query) {
+    return {
+      overview: {
+        totalRevenue: 0,
+        monthlyRevenue: 0,
+        yearlyRevenue: 0,
+        averageOrderValue: 0,
+      },
+
+      monthlyRevenue: [],
+
+      topSellingCourses: [],
+
+      transactions: [],
+
+      paymentMethods: [],
+
+      refunds: {
+        totalRefunds: 0,
+        refundedAmount: 0,
+      },
+    };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                             Recent Activity                              */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Recent platform activity.
+   *
+   * Merges multiple collections into one timeline sorted newest-first. Each
+   * source is mapped to a common activity shape, so future activity types
+   * (enrollment, quiz attempt, completion, etc.) extend the timeline without
+   * changing the response structure.
+   *
+   * @param {Object} query
+   * @returns {Promise<Array<{ type: string, entityId, title: string, description: string, createdAt: Date }>>}
+   */
+  // eslint-disable-next-line no-unused-vars
+  async getRecentActivity(query) {
+    const [
+      recentUsers,
+      recentCourses,
+      recentEnrollments,
+      recentAttempts,
+      recentCompletions,
+    ] = await Promise.all([
+      User.find({ isDeleted: false })
+        .sort({ createdAt: -1 })
+        .limit(RECENT_ACTIVITY_PER_SOURCE)
+        .select("fullName email role createdAt")
+        .lean(),
+
+      Course.find({ isDeleted: false })
+        .sort({ createdAt: -1 })
+        .limit(RECENT_ACTIVITY_PER_SOURCE)
+        .select("title createdAt")
+        .lean(),
+
+      Enrollment.find()
+        .sort({ createdAt: -1 })
+        .limit(RECENT_ACTIVITY_PER_SOURCE)
+        .populate("student", "fullName")
+        .populate("course", "title")
+        .lean(),
+
+      // Submitted/graded attempts are treated as completed quiz attempts.
+      Attempt.find({ status: { $in: [ATTEMPT_STATUS.SUBMITTED, ATTEMPT_STATUS.GRADED] } })
+        .sort({ createdAt: -1 })
+        .limit(RECENT_ACTIVITY_PER_SOURCE)
+        .populate("student", "fullName")
+        .populate("quiz", "title")
+        .lean(),
+
+      Progress.find({ isCourseCompleted: true })
+        .sort({ completedAt: -1 })
+        .limit(RECENT_ACTIVITY_PER_SOURCE)
+        .populate("student", "fullName")
+        .populate("course", "title")
+        .lean(),
+    ]);
+
+    const userActivities = recentUsers.map((user) => ({
+      type: "USER_REGISTERED",
+      entityId: user._id,
+      title: `${user.fullName} registered`,
+      description: `${user.role} account created`,
+      createdAt: user.createdAt,
+    }));
+
+    const courseActivities = recentCourses.map((course) => ({
+      type: "COURSE_CREATED",
+      entityId: course._id,
+      title: course.title,
+      description: "New course created",
+      createdAt: course.createdAt,
+    }));
+
+    const enrollmentActivities = recentEnrollments.map((enrollment) => ({
+      type: "ENROLLMENT_CREATED",
+      entityId: enrollment._id,
+      title: enrollment.course?.title ?? "Course",
+      description: `${enrollment.student?.fullName ?? "User"} enrolled`,
+      createdAt: enrollment.createdAt,
+    }));
+
+    const attemptActivities = recentAttempts.map((attempt) => ({
+      type: "QUIZ_ATTEMPT_COMPLETED",
+      entityId: attempt._id,
+      title: attempt.quiz?.title ?? "Quiz",
+      description: `${attempt.student?.fullName ?? "Student"} completed a quiz`,
+      createdAt: attempt.createdAt,
+    }));
+
+    const completionActivities = recentCompletions.map((progress) => ({
+      type: "COURSE_COMPLETED",
+      entityId: progress._id,
+      title: progress.course?.title ?? "Course",
+      description: `${progress.student?.fullName ?? "Student"} completed a course`,
+      createdAt: progress.completedAt,
+    }));
+
+    const activities = [
+      ...userActivities,
+      ...courseActivities,
+      ...enrollmentActivities,
+      ...attemptActivities,
+      ...completionActivities,
+    ];
+
+    // Newest first, then return only the latest items.
+    activities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return activities.slice(0, RECENT_ACTIVITY_TOTAL);
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                             Action Center                                */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Priority ordering used to sort admin actions (highest first).
+   */
+  static get PRIORITY_ORDER() {
+    return { HIGH: 1, MEDIUM: 2, LOW: 3 };
+  }
+
+  /**
+   * Admin action center.
+   *
+   * Returns a list of actionable, prioritized tasks for the admin — built from
+   * counts/issues that already have dedicated admin analytics (blocked users,
+   * unverified instructors, draft courses, content gaps, etc.). No raw data is
+   * returned; only tasks that require attention.
+   *
+   * @returns {Promise<Array<{ type: string, priority: "HIGH"|"MEDIUM"|"LOW", count: number, message: string }>>}
+   */
+  async getAdminActionCenter() {
+    const actions = [];
+
+    const [
+      blockedUsers,
+      unverifiedInstructors,
+      draftCourses,
+      coursesWithoutModules,
+      modulesWithoutLessons,
+      lessonsWithoutContent,
+      draftCoursesReadyForPublishing,
+    ] = await Promise.all([
+      // Blocked users require review (`isBlocked` field on the User model).
+      User.countDocuments({ isBlocked: true }),
+
+      // Instructors that have not verified their email yet.
+      User.countDocuments({
+        role: constants.ROLES.INSTRUCTOR,
+        isEmailVerified: false,
+      }),
+
+      // Draft courses may need to be reviewed/published.
+      Course.countDocuments({ isDeleted: false, status: COURSE_STATUS.DRAFT }),
+
+      this._getCoursesWithoutModules(),
+      this._getModulesWithoutLessons(),
+      this._getLessonsWithoutContent(),
+      this._getDraftCoursesReadyForPublishing(),
+    ]);
+
+    if (blockedUsers > 0) {
+      actions.push({
+        type: "BLOCKED_USERS",
+        priority: "HIGH",
+        count: blockedUsers,
+        message: `${blockedUsers} blocked users require review.`,
+      });
+    }
+
+    if (unverifiedInstructors > 0) {
+      actions.push({
+        type: "UNVERIFIED_INSTRUCTORS",
+        priority: "HIGH",
+        count: unverifiedInstructors,
+        message: `${unverifiedInstructors} instructors are awaiting verification.`,
+      });
+    }
+
+    if (draftCourses > 0) {
+      actions.push({
+        type: "DRAFT_COURSES",
+        priority: "MEDIUM",
+        count: draftCourses,
+        message: `${draftCourses} draft courses need review.`,
+      });
+    }
+
+    if (coursesWithoutModules.length) {
+      actions.push({
+        type: "COURSES_WITHOUT_MODULES",
+        priority: "HIGH",
+        count: coursesWithoutModules.length,
+        message: "Some courses have no modules.",
+      });
+    }
+
+    if (modulesWithoutLessons.length) {
+      actions.push({
+        type: "MODULES_WITHOUT_LESSONS",
+        priority: "HIGH",
+        count: modulesWithoutLessons.length,
+        message: "Some modules have no lessons.",
+      });
+    }
+
+    if (lessonsWithoutContent.length) {
+      actions.push({
+        type: "LESSONS_WITHOUT_CONTENT",
+        priority: "MEDIUM",
+        count: lessonsWithoutContent.length,
+        message: "Some lessons are missing content.",
+      });
+    }
+
+    if (draftCoursesReadyForPublishing.length) {
+      actions.push({
+        type: "READY_TO_PUBLISH",
+        priority: "LOW",
+        count: draftCoursesReadyForPublishing.length,
+        message: "Courses are ready for publishing.",
+      });
+    }
+
+    const { PRIORITY_ORDER } = DashboardService;
+
+    actions.sort(
+      (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
+    );
+
+    return actions;
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*                            Composite Dashboard                           */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Complete admin dashboard.
+   *
+   * Orchestrates all the individually-built admin analytics endpoints into a
+   * single payload — it does NOT duplicate any logic. Each section delegates
+   * to its dedicated method, and since every one of these queries is
+   * independent, `Promise.all` lets MongoDB process them concurrently rather
+   * than serially.
+   *
+   * @param {Object} [query={}] Optional shared query params (passed through to
+   *   the analytics methods that accept them).
+   * @returns {Promise<Object>}
+   */
+  async getAdminDashboard(query = {}) {
+    const [
+      overview,
+      userAnalytics,
+      courseAnalytics,
+      enrollmentAnalytics,
+      platformHealth,
+      revenue,
+      recentActivity,
+      actionCenter,
+    ] = await Promise.all([
+      this.getAdminOverview(query),
+      this.getUserAnalytics(query),
+      this.getCourseAnalytics(query),
+      this.getEnrollmentAnalytics(query),
+      this.getPlatformHealth(),
+      this.getRevenueAnalytics(query),
+      this.getRecentActivity(query),
+      this.getAdminActionCenter(),
+    ]);
+
+    return {
+      overview,
+      userAnalytics,
+      courseAnalytics,
+      enrollmentAnalytics,
+      platformHealth,
+      revenue,
+      recentActivity,
       actionCenter,
     };
   }

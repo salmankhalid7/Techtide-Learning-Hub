@@ -102,3 +102,51 @@ export const validateEarningsStats = [];
  * No parameters are currently accepted; kept for architectural consistency.
  */
 export const validateActionCenter = [];
+
+/**
+ * Validation chain for the admin overview (GET /admin/overview).
+ * No parameters are currently accepted; kept for architectural consistency.
+ */
+export const validateAdminOverview = [];
+
+/**
+ * Validation chain for user analytics (GET /admin/users).
+ * No parameters are currently accepted; kept for architectural consistency.
+ */
+export const validateUserAnalytics = [];
+
+/**
+ * Validation chain for course analytics (GET /admin/courses).
+ * No parameters are currently accepted; kept for architectural consistency.
+ */
+export const validateCourseAnalytics = [];
+
+/**
+ * Validation chain for enrollment analytics (GET /admin/enrollments).
+ * No parameters are currently accepted; kept for architectural consistency.
+ */
+export const validateEnrollmentAnalytics = [];
+
+/**
+ * Validation chain for platform health (GET /admin/platform-health).
+ * No parameters are currently accepted; kept for architectural consistency.
+ */
+export const validatePlatformHealth = [];
+
+/**
+ * Validation chain for revenue analytics (GET /admin/revenue).
+ * No parameters are currently accepted; kept for architectural consistency.
+ */
+export const validateRevenueAnalytics = [];
+
+/**
+ * Validation chain for recent activity (GET /admin/recent-activity).
+ * No parameters are currently accepted; kept for architectural consistency.
+ */
+export const validateRecentActivity = [];
+
+/**
+ * Validation chain for the admin action center (GET /admin/action-center).
+ * No parameters are currently accepted; kept for architectural consistency.
+ */
+export const validateAdminActionCenter = [];

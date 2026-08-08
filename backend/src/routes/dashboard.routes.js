@@ -1,9 +1,11 @@
 /**
  * @file dashboard.routes.js
- * @description RESTful routes for Instructor Dashboard APIs.
+ * @description RESTful routes for Dashboard APIs.
  *
- * All routes are private (require authentication) and restricted to
- * instructors. Each defines its own validation chain + validation middleware.
+ * All routes are private (require authentication). Instructor routes are
+ * restricted to instructors; admin routes are grouped separately and
+ * restricted to admins. Each defines its own validation chain + validation
+ * middleware.
  */
 
 import { Router } from "express";
@@ -37,7 +39,9 @@ import {
 
 const router = Router();
 
-// All dashboard routes require authentication + instructor role.
+/* ─────────────────────────── Instructor routes ─────────────────────────── */
+
+// All instructor dashboard routes require authentication + instructor role.
 router.use(authenticate, authorize("instructor"));
 
 /**

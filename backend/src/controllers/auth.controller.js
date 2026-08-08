@@ -32,6 +32,11 @@ async login(req, res, next) {
       message: "Login successful.",
       data: {
         user,
+        // Exposed for API clients / tools that authenticate via a
+        // `Authorization: Bearer <token>` header. Browsers still rely on the
+        // httpOnly cookie set above (the token here is also readable by JS,
+        // but the cookie remains the primary, XSS-safe path for web).
+        accessToken,
       },
     });
   } catch (error) {
@@ -110,6 +115,7 @@ async login(req, res, next) {
         message: "User registered successfully.",
         data: {
           user,
+          accessToken,
         },
       });
     } catch (error) {

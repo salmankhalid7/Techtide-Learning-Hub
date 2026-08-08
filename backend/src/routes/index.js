@@ -15,6 +15,7 @@ import attemptRouter from "./attempt.routes.js";
 import progressRouter from "./progress.routes.js";
 import { getApiInfo } from "../controllers/system.controller.js";
 import dashboardRoutes from "./dashboard.routes.js";
+import adminDashboardRoutes from "./admin-dashboard.routes.js";
 
 const router = Router();
 
@@ -44,4 +45,5 @@ router.use(attemptRouter);
 router.use(enrollmentRouter);
 router.use(progressRouter);
 router.use("/instructor/dashboard", dashboardRoutes);
+router.use("/admin/dashboard", adminDashboardRoutes);
 export default router;

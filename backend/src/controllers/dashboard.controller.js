@@ -123,3 +123,111 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         .status(httpStatus.OK)
         .json(new ApiResponse(httpStatus.OK, "Instructor dashboard retrieved successfully.", data));
 });
+
+/**
+ * GET /instructor/dashboard/admin/overview
+ * Platform-wide admin overview (summary metrics across the entire platform).
+ */
+export const getAdminOverview = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getAdminOverview();
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "Admin overview retrieved successfully.", data));
+});
+
+/**
+ * GET /instructor/dashboard/admin/users
+ * User analytics (growth, recent registrations, recently active users).
+ */
+export const getUserAnalytics = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getUserAnalytics(req.query);
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "User analytics retrieved successfully.", data));
+});
+
+/**
+ * GET /instructor/dashboard/admin/courses
+ * Course analytics (popular courses, highest rated, recently published/created).
+ */
+export const getCourseAnalytics = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getCourseAnalytics(req.query);
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "Course analytics retrieved successfully.", data));
+});
+
+/**
+ * GET /instructor/dashboard/admin/enrollments
+ * Enrollment analytics (trends and completion, not course details).
+ */
+export const getEnrollmentAnalytics = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getEnrollmentAnalytics(req.query);
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "Enrollment analytics retrieved successfully.", data));
+});
+
+/**
+ * GET /instructor/dashboard/admin/platform-health
+ * Platform health analytics (issues that need attention).
+ */
+export const getPlatformHealth = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getPlatformHealth();
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "Platform health retrieved successfully.", data));
+});
+
+/**
+ * GET /instructor/dashboard/admin/revenue
+ * Revenue analytics (placeholder until the payment module is implemented).
+ */
+export const getRevenueAnalytics = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getRevenueAnalytics(req.query);
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "Revenue analytics retrieved successfully.", data));
+});
+
+/**
+ * GET /instructor/dashboard/admin/recent-activity
+ * Recent platform activity (merged timeline of multiple collections).
+ */
+export const getRecentActivity = asyncHandler(async (req, res) => {
+    const data = await dashboardService.getRecentActivity(req.query);
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "Recent activity retrieved successfully.", data));
+});
+
+/**
+ * GET /instructor/dashboard/admin/action-center
+ * Actionable tasks that require the admin's attention.
+ */
+export const getAdminActionCenter = asyncHandler(async (req, res) => {
+    const actions = await dashboardService.getAdminActionCenter();
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "Admin action center retrieved successfully.", actions));
+});
+
+/**
+ * GET /admin/dashboard
+ * Complete admin dashboard (composite of all admin analytics).
+ */
+export const getAdminDashboard = asyncHandler(async (req, res) => {
+    const dashboard = await dashboardService.getAdminDashboard(req.query);
+
+    return res
+        .status(httpStatus.OK)
+        .json(new ApiResponse(httpStatus.OK, "Admin dashboard retrieved successfully.", dashboard));
+});
