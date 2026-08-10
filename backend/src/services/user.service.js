@@ -9,7 +9,10 @@ class UserService {
    * Get user profile.
    */
   async getProfile(userId) {
-    const user = await User.findById(userId).select("-password");
+    // `password` and `refreshToken` are already `select: false` on the schema,
+    // so no explicit exclusion is needed, and `.lean()` returns a lightweight
+    // plain object instead of a hydrated Mongoose document (read-only endpoint).
+    const user = await User.findById(userId).lean();
 
     if (!user) {
       throw new AppError("User not found.", 404);
@@ -47,9 +50,12 @@ class UserService {
       user.fullName = fullName;
     }
 
-    await user.save();
+    // `validateModifiedOnly` skips re-validating unchanged fields; the saved
+    // document already reflects all changes, so `toJSON()` (schema hook) strips
+    // password/refreshToken and avoids an extra `findById` round trip.
+    await user.save({ validateModifiedOnly: true });
 
-    return await User.findById(userId).select("-password");
+    return user.toJSON();
   }
 
   /**
@@ -118,10 +124,12 @@ class UserService {
       publicId: uploadedImage.public_id,
     };
 
-    await user.save();
+    // The saved document already holds the new avatar. `validateModifiedOnly`
+    // skips re-validating unchanged fields; `toJSON()` (schema hook) strips
+    // password/refreshToken/__v, avoiding an extra `findById` round trip.
+    await user.save({ validateModifiedOnly: true });
 
-    return await User.findById(userId)
-      .select("-password");
+    return user.toJSON();
   }
 }
 

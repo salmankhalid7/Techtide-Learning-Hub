@@ -118,17 +118,21 @@ const userSchema = new mongoose.Schema(
 // Indexes
 // ==========================================
 
-// OAuth indexes
-userSchema.index({ googleId: 1 });
-userSchema.index({ githubId: 1 });
+// `email` and `username` fields are `unique: true`, so mongoose auto-creates
+// unique indexes for them — those cover every email/username lookup.
 
-// Common query indexes
+// Common query indexes (used by admin dashboard / user analytics queries).
 userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ isDeleted: 1 });
 
-// Compound index for active users
-userSchema.index({ email: 1, isDeleted: 1 });
+// NOTE: `googleId` / `githubId` and `{ email: 1, isDeleted: 1 }` indexes were
+// removed — there are no OAuth-provider lookups (`User.findOne({ googleId })`
+// etc.) and no `email + isDeleted` queries in the codebase. The unique `email`
+// index already serves all email lookups. If OAuth login is added later, add
+// sparse unique indexes then:
+//   userSchema.index({ googleId: 1 }, { sparse: true, unique: true });
+//   userSchema.index({ githubId: 1 }, { sparse: true, unique: true });
 
 // ==========================================
 // Hooks

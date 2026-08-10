@@ -22,18 +22,19 @@ class AuthService {
       role,
     } = userData;
 
-    // Check if email already exists
-    const existingEmail = await User.findOne({ email });
+    // Check if email / username already exists — run in parallel (both are
+    // lean `_id`-only projections so we don't hydrate full documents).
+    const [existingEmail, existingUsername] = await Promise.all([
+      User.findOne({ email }).select("_id").lean(),
+      User.findOne({ username }).select("_id").lean(),
+    ]);
 
     if (existingEmail) {
-      throw new Error("Email is already registered.");
+      throw new AppError("Email is already registered.", 409);
     }
 
-    // Check if username already exists
-    const existingUsername = await User.findOne({ username });
-
     if (existingUsername) {
-      throw new Error("Username is already taken.");
+      throw new AppError("Username is already taken.", 409);
     }
 
     // Create user
@@ -107,13 +108,25 @@ return {
 
     const userId = decoded.id;
 
+    // Only the account-state fields are needed for the authorization check;
+    // project them and use `.lean()` to avoid hydrating the full User doc.
     const user =
-      await User.findById(userId);
+      await User.findById(userId)
+        .select("_id isActive isBlocked isDeleted")
+        .lean();
 
     if (!user) {
       throw new AppError(
         "User no longer exists.",
         401
+      );
+    }
+
+    // Reject refresh for accounts that are unavailable (blocked, deleted, or
+    // inactive) — the model exposes these flags for exactly this check.
+    if (!user.isActive || user.isBlocked || user.isDeleted) {
+      throw new UnauthorizedError(
+        "User account is not available."
       );
     }
 
@@ -204,8 +217,11 @@ return {
       ),
     });
 
+    // Sanitize the user once before returning. `+password` was required for
+    // bcrypt, so the hydrated doc holds the hash — `toJSON()` strips it (and
+    // refreshToken/__v) from the response. No extra findById needed.
     return {
-      user,
+      user: user.toJSON(),
       accessToken,
       refreshToken,
     };

@@ -41,6 +41,10 @@ refreshTokenSchema.index(
   }
 );
 
+// Support fast lookup + revocation by user (password change, logout, token
+// revocation). Without this, `updateMany({ user })` scans the whole collection.
+refreshTokenSchema.index({ user: 1 });
+
 
 const RefreshToken = mongoose.model(
   "RefreshToken",
