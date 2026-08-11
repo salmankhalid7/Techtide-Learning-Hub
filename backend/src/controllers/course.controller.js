@@ -31,7 +31,7 @@ const getCourseById = asyncHandler(async (req, res) => {
 });
 
 const getCourses = asyncHandler(async (req, res) => {
-  const courses = await courseService.getCourses(req.query);
+  const courses = await courseService.getCourses(req.query, req.user);
 
   return res
     .status(200)

@@ -27,10 +27,10 @@ export const createModuleController = asyncHandler(async (req, res) => {
 /**
  * @desc    Get a module by ID
  * @route   GET /api/v1/modules/:moduleId
- * @access  Public
+ * @access  Public (owner/admin see all; public sees only published+public)
  */
 export const getModuleController = asyncHandler(async (req, res) => {
-  const module = await getModuleById(req.params.moduleId);
+  const module = await getModuleById(req.params.moduleId, req.user);
 
   return res
     .status(200)
@@ -40,10 +40,10 @@ export const getModuleController = asyncHandler(async (req, res) => {
 /**
  * @desc    Get all modules of a course
  * @route   GET /api/v1/modules/course/:courseId
- * @access  Public
+ * @access  Public (owner/admin see all; public sees only published+public)
  */
 export const getCourseModulesController = asyncHandler(async (req, res) => {
-  const modules = await getModulesByCourse(req.params.courseId);
+  const modules = await getModulesByCourse(req.params.courseId, req.user);
 
   return res
     .status(200)

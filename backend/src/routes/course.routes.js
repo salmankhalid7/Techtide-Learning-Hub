@@ -10,6 +10,7 @@ import {
   deleteCourse,
 } from "../controllers/course.controller.js";
 import authenticate from "../middlewares/authenticate.js";
+import authenticateOptional from "../middlewares/authenticateOptional.js";
 import authorize from "../middlewares/authorize.js";
 import validate from "../middlewares/validation.middleware.js";
 import {
@@ -23,8 +24,16 @@ const router = Router();
 
 // ── Public Routes ──────────────────────────────────────────
 
-// GET /courses — List courses with optional filtering and pagination
-router.get("/", validateCourseFilters, validate, getCourses);
+// GET /courses — List courses with optional filtering and pagination.
+// Uses optional auth so anonymous browsing still works, while an
+// authenticated instructor/admin gets their owner-scoped view (H1).
+router.get(
+  "/",
+  authenticateOptional,
+  validateCourseFilters,
+  validate,
+  getCourses
+);
 
 // GET /courses/:courseId — Get a single course by ID
 router.get(

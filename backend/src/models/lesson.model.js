@@ -136,12 +136,17 @@ const lessonSchema = new Schema(
 
         /**
          * Relationships
+         *
+         * NOTE: the standalone `{ module: 1 }` field index was removed (L2) — the
+         * partial unique `{ module: 1, order: 1 }` compound below has `module` as
+         * its leftmost prefix and covers every live module-filtered query (all of
+         * which also filter `isDeleted: false`), so a redundant single index adds
+         * write overhead for no read benefit.
          */
         module: {
             type: Schema.Types.ObjectId,
             ref: "Module",
-            required: true,
-            index: true
+            required: true
         },
 
         /**

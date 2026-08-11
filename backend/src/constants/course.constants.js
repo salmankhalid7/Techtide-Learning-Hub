@@ -40,3 +40,19 @@ export const COURSE_CURRENCIES = Object.freeze({
  * Default course language.
  */
 export const DEFAULT_COURSE_LANGUAGE = "English";
+
+/**
+ * Allowed fields for sorting the public course listing (`sortBy`).
+ *
+ * Only fields that exist on the Course model (and are backed by an index where
+ * possible) are permitted. This allowlist prevents clients from passing
+ * arbitrary sort keys (e.g. `__proto__`, random fields) into `.sort()`, which
+ * could trigger inefficient or unexpected queries / errors.
+ */
+export const COURSE_SORT_FIELDS = Object.freeze([
+  "title",
+  "createdAt",
+  "updatedAt",
+  "statistics.totalEnrollments",
+  "statistics.averageRating",
+]);

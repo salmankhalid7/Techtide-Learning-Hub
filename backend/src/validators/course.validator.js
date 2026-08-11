@@ -1,5 +1,6 @@
 import { param, query } from "express-validator";
 
+import { COURSE_SORT_FIELDS } from "../constants/course.constants.js";
 import {
   courseTitleRule,
   shortDescriptionRule,
@@ -55,8 +56,10 @@ export const validateCourseFilters = [
 
   query("sortBy")
     .optional()
-    .isString()
-    .withMessage("SortBy must be a string."),
+    .isIn(COURSE_SORT_FIELDS)
+    .withMessage(
+      `SortBy must be one of: ${COURSE_SORT_FIELDS.join(", ")}.`
+    ),
 
   query("sortOrder")
     .optional()

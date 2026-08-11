@@ -162,9 +162,12 @@ return {
    * Logout a user by clearing their refresh token.
    */
   async logout(userId) {
-    const user = await User.findById(userId);
+    // Only existence matters here — `exists()` avoids hydrating the full doc
+    // and returns a lightweight `{ _id }` (or null). Semantically identical to
+    // the previous `findById()` + null check, just leaner.
+    const userExists = await User.exists({ _id: userId });
 
-    if (!user) {
+    if (!userExists) {
       throw new NotFoundError("User not found.");
     }
 

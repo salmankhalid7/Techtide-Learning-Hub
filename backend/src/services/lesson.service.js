@@ -26,6 +26,7 @@ import Lesson from "../models/lesson.model.js";
 import Module from "../models/module.model.js";
 import generateUniqueSlug from "../utils/generateUniqueSlug.js";
 import { verifyCourseOwnership } from "../helpers/ownership.helper.js";
+import { refreshCourseStats } from "../helpers/courseStats.helper.js";
 import { LESSON_STATUS_ENUM } from "../constants/lesson.constants.js";
 import { NotFoundError, BadRequestError } from "../errors/index.js";
 
@@ -188,6 +189,9 @@ export const createLesson = async (payload, user, session = null) => {
         ? await Lesson.create([lessonData], { session })
         : await Lesson.create([lessonData]);
 
+    // A new lesson changes the course's lesson/duration totals — refresh.
+    await refreshCourseStats(module.course);
+
     return lesson;
 };
 
@@ -238,6 +242,11 @@ export const updateLesson = async (lessonId, updateData, user, session = null) =
 
     session ? await lesson.save({ session }) : await lesson.save();
 
+    // If the lesson duration changed, refresh course lesson/duration totals.
+    if (updateData.duration !== undefined) {
+        await refreshCourseStats(module.course);
+    }
+
     return lesson;
 };
 
@@ -281,7 +290,8 @@ export const getLessonsByModule = async (moduleId, session = null) => {
 
     const lessons = await Lesson.find({ module: moduleId })
         .session(session)
-        .sort({ order: 1 });
+        .sort({ order: 1 })
+        .lean();
 
     return lessons;
 };
@@ -422,6 +432,9 @@ export const deleteLesson = async (lessonId, user, session = null) => {
         if (ownsSession) {
             await session.commitTransaction();
         }
+
+        // Deleting a lesson changes the course's lesson/duration totals — refresh.
+        await refreshCourseStats(module.course);
 
         return { id: lessonId, deleted: true };
     } catch (error) {

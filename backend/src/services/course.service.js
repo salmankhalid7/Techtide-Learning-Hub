@@ -1,5 +1,8 @@
 import Course from "../models/course.model.js";
-import { COURSE_STATUS } from "../constants/course.constants.js";
+import {
+  COURSE_STATUS,
+  COURSE_VISIBILITY,
+} from "../constants/course.constants.js";
 import { NotFoundError, ForbiddenError, BadRequestError } from "../errors/index.js";
 
 // ── Create Course ──────────────────────────────────────────
@@ -79,7 +82,16 @@ const getCourseById = async (courseId) => {
 
 // ── Get Courses (Paginated / Filtered) ─────────────────────
 // Supports text search, category/level/status/instructor filters, and sorting.
-const getCourses = async (queryParams) => {
+//
+// Access scoping (H1):
+//  - Anonymous visitors and students: only `status: "published"` AND
+//    `visibility: "public"` courses are returned. Client-supplied
+//    `status` / `visibility` filters are IGNORED so draft/archived/private
+//    courses cannot leak.
+//  - Course instructors: may also see their own courses in any status via
+//    `instructor` (their own id).
+//  - Admins: may filter by any status/visibility (full management view).
+const getCourses = async (queryParams, user) => {
   const {
     page = 1,
     limit = 10,
@@ -92,14 +104,37 @@ const getCourses = async (queryParams) => {
     sortOrder = "desc",
   } = queryParams;
 
+  const isAdmin = user?.role === "admin";
+  const isOwner = !!user && !isAdmin && instructor === String(user._id);
+
   // Build the filter query dynamically
   const query = {};
 
   if (search) query.$text = { $search: search };
   if (category) query.category = category;
   if (level) query.level = level;
-  if (status) query.status = status;
-  if (instructor) query.instructor = instructor;
+
+  // Instructors may filter by their OWN instructor id to see their own
+  // courses including drafts/archived (owner-scoped management view).
+  if (instructor && isOwner) {
+    query.instructor = instructor;
+    if (status) query.status = status;
+    if (queryParams.visibility) {
+      query.visibility = queryParams.visibility;
+    }
+  } else {
+    // Default scope for all other callers (anonymous, students, and
+    // instructors without an owner filter): published + public only.
+    // Clients cannot override this, preventing disclosure of drafts etc.
+    query.status = COURSE_STATUS.PUBLISHED;
+    query.visibility = COURSE_VISIBILITY.PUBLIC;
+
+    if (isAdmin && status) query.status = status;
+    if (isAdmin && queryParams.visibility) {
+      query.visibility = queryParams.visibility;
+    }
+    if (instructor && isAdmin) query.instructor = instructor;
+  }
 
   const skip = (page - 1) * limit;
 
@@ -164,13 +199,25 @@ const publishCourse = async (courseId, user) => {
 
 // ── Archive Course ─────────────────────────────────────────
 // Moves a course to the archived status.
+//
+// Optimized (M2): only the ownership-relevant `instructor` field is hydrated
+// for the authorization check, then a single targeted `findByIdAndUpdate`
+// flips the status to archived. `findByIdAndUpdate({ new: true })` returns
+// the updated hydrated document so the API response shape is unchanged.
 const archiveCourse = async (courseId, user) => {
-  const course = await Course.findById(courseId);
+  // Ownership/existence check — minimal projection. Explicit soft-delete
+  // filter because findOne/update queries do not run the `pre(/^find/)`
+  // middleware that normally excludes soft-deleted courses.
+  const course = await Course.findOne({
+    _id: courseId,
+    isDeleted: { $ne: true },
+  }).select("instructor");
 
   if (!course) {
     throw new NotFoundError("Course not found.");
   }
 
+  // Only instructor or admin
   if (
     course.instructor.toString() !== user._id.toString() &&
     user.role !== "admin"
@@ -178,22 +225,35 @@ const archiveCourse = async (courseId, user) => {
     throw new ForbiddenError("You are not authorized to archive this course.");
   }
 
-  course.status = COURSE_STATUS.ARCHIVED;
+  const updated = await Course.findByIdAndUpdate(
+    courseId,
+    { $set: { status: COURSE_STATUS.ARCHIVED } },
+    { new: true }
+  );
 
-  await course.save();
-
-  return course;
+  return updated;
 };
 
 // ── Delete Course (Soft) ───────────────────────────────────
 // Marks the course as deleted so the find middleware excludes it by default.
+//
+// Optimized (M2): only the ownership-relevant `instructor` field is hydrated
+// for the authorization check, then a single targeted `updateOne` performs the
+// soft-delete. The controller returns `null`, so no updated document is needed.
 const deleteCourse = async (courseId, user) => {
-  const course = await Course.findById(courseId);
+  // Ownership/existence check — minimal projection. Explicit soft-delete
+  // filter because update queries do not run the `pre(/^find/)` middleware
+  // that normally excludes soft-deleted courses.
+  const course = await Course.findOne({
+    _id: courseId,
+    isDeleted: { $ne: true },
+  }).select("instructor");
 
   if (!course) {
     throw new NotFoundError("Course not found.");
   }
 
+  // Only instructor or admin
   if (
     course.instructor.toString() !== user._id.toString() &&
     user.role !== "admin"
@@ -201,10 +261,10 @@ const deleteCourse = async (courseId, user) => {
     throw new ForbiddenError("You are not authorized to delete this course.");
   }
 
-  course.isDeleted = true;
-  course.deletedAt = new Date();
-
-  await course.save();
+  await Course.updateOne(
+    { _id: courseId },
+    { $set: { isDeleted: true, deletedAt: new Date() } }
+  );
 };
 
 // ── Service Object ─────────────────────────────────────────

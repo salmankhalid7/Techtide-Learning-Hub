@@ -130,8 +130,10 @@ const moduleSchema = new Schema(
  * -------------------------------------------------------
  */
 
-// Frequently queried when fetching modules of a course
-moduleSchema.index({ course: 1 });
+// NOTE: the single-field `{ course: 1 }` index was removed (L2) — the
+// `{ course: 1, order: 1 }` compound below has `course` as its leftmost prefix,
+// so it serves every `course`-filtered query (including those that only filter
+// by course) without a redundant standalone index.
 
 // Filter modules by workflow status
 moduleSchema.index({ status: 1 });
@@ -142,7 +144,8 @@ moduleSchema.index({ course: 1, order: 1 });
 // Support scheduled publishing
 moduleSchema.index({ releaseAt: 1 });
 
-// Improve soft-delete queries
+// Improve soft-delete queries (platform-wide module count filters on deletedAt
+// as the leading field — this index is used, do not remove).
 moduleSchema.index({ deletedAt: 1 });
 /**
  * -------------------------------------------------------
