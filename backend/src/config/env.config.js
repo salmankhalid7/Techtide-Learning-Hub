@@ -130,6 +130,40 @@ const config = Object.freeze({
     pass: process.env.MAIL_PASS || undefined,
     from: process.env.MAIL_FROM || undefined,
   }),
+
+  // AI evaluation is optional — when unconfigured the task evaluator falls
+  // back to its deterministic heuristic so the feature stays functional.
+  // `provider` drives sensible defaults for `baseUrl`/`model` when the env
+  // values are not provided explicitly (Groq is supported natively).
+  ai: Object.freeze({
+    enabled: process.env.AI_EVAL_ENABLED === "true",
+    provider: process.env.AI_EVAL_PROVIDER || "groq",
+    apiKey: process.env.AI_EVAL_API_KEY || undefined,
+
+    // Resolve provider-aware defaults using the resolved `provider` above so
+    // they stay consistent (e.g. provider=groq => groq base URL + model).
+    baseUrl:
+      process.env.AI_EVAL_BASE_URL ||
+      ((process.env.AI_EVAL_PROVIDER || "groq") === "groq"
+        ? "https://api.groq.com/openai/v1"
+        : "https://api.openai.com/v1"),
+
+    model:
+      process.env.AI_EVAL_MODEL ||
+      ((process.env.AI_EVAL_PROVIDER || "groq") === "groq"
+        ? "llama-3.3-70b-versatile"
+        : "gpt-4o-mini"),
+
+    temperature: process.env.AI_EVAL_TEMPERATURE
+      ? Number(process.env.AI_EVAL_TEMPERATURE)
+      : 0.2,
+    maxTokens: process.env.AI_EVAL_MAX_TOKENS
+      ? Number(process.env.AI_EVAL_MAX_TOKENS)
+      : 2000,
+    timeoutMs: process.env.AI_EVAL_TIMEOUT_MS
+      ? Number(process.env.AI_EVAL_TIMEOUT_MS)
+      : 30000,
+  }),
 });
 
 export default config;
