@@ -14,6 +14,13 @@ import questionRouter from "./question.routes.js";
 import attemptRouter from "./attempt.routes.js";
 import progressRouter from "./progress.routes.js";
 import taskRouter from "./task.routes.js";
+import reviewRouter from "./review.routes.js";
+import paymentRouter from "./payment.routes.js";
+import orderRouter from "./order.routes.js";
+import couponRouter from "./coupon.routes.js";
+import walletRouter from "./wallet.routes.js";
+import payoutRouter from "./payout.routes.js";
+import invoiceRouter from "./invoice.routes.js";
 import { getApiInfo } from "../controllers/system.controller.js";
 import dashboardRoutes from "./dashboard.routes.js";
 import adminDashboardRoutes from "./admin-dashboard.routes.js";
@@ -33,6 +40,10 @@ router.use("/uploads", uploadRouter);
 
 // ── Course content (relative-path routers) ────────────────────────────────
 
+// REVIEW router registers course-scoped review/routes under /courses BEFORE
+// courseRouter so its public GET /courses/:courseId/reviews and .../rating are
+// not shadowed by courseRouter's router.use(authenticate) guard.
+router.use(reviewRouter);
 router.use("/courses", courseRouter);
 router.use("/categories", categoryRouter);
 router.use("/modules", moduleRouter);
@@ -46,6 +57,12 @@ router.use(attemptRouter);
 router.use(enrollmentRouter);
 router.use(progressRouter);
 router.use(taskRouter);
+router.use(paymentRouter);
+router.use(orderRouter);
+router.use(couponRouter);
+router.use(walletRouter);
+router.use(payoutRouter);
+router.use(invoiceRouter);
 router.use("/instructor/dashboard", dashboardRoutes);
 router.use("/admin/dashboard", adminDashboardRoutes);
 export default router;

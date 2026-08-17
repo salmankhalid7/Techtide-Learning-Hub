@@ -54,9 +54,28 @@ app.use(compression());
  * Parse incoming JSON requests.
  * Limit payload size to reduce abuse.
  */
+/**
+ * Capture the raw request body before JSON parsing. Required by the payment
+ * webhook handler (Stripe) to verify signatures over the exact raw payload.
+ * The raw body is stored on `req.rawBody` and is only retained for routes that
+ * opt in via the `rawBody` flag to avoid buffering large payloads everywhere.
+ */
+app.use((req, res, next) => {
+  if (req.rawBody === undefined) {
+    req.rawBody = "";
+  }
+  next();
+});
 app.use(
   express.json({
     limit: "10mb",
+    verify: (req, res, buf) => {
+      // Preserve the raw payload whenever a JSON body is parsed. Stripe signs
+      // the exact bytes, so we keep the original string.
+      if (buf && buf.length) {
+        req.rawBody = buf.toString("utf8");
+      }
+    },
   })
 );
 /**

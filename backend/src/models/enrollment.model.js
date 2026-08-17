@@ -5,7 +5,10 @@
 
 import mongoose from "mongoose";
 
-import { ENROLLMENT_STATUS } from "../constants/enrollment.constants.js";
+import {
+    ENROLLMENT_STATUS,
+    ENROLLMENT_TYPE,
+} from "../constants/enrollment.constants.js";
 
 const { Schema, model } = mongoose;
 
@@ -69,6 +72,29 @@ const enrollmentSchema = new Schema(
 
         lastAccessedAt: {
             type: Date,
+            default: null,
+        },
+
+        /*
+         * Marketplace linkage. `enrollmentType` distinguishes free access from
+         * a paid purchase. `order`/`payment` point back to the marketplace
+         * records that granted the access (null for free enrollments).
+         */
+        enrollmentType: {
+            type: String,
+            enum: Object.values(ENROLLMENT_TYPE),
+            default: ENROLLMENT_TYPE.FREE,
+        },
+
+        order: {
+            type: Schema.Types.ObjectId,
+            ref: "Order",
+            default: null,
+        },
+
+        payment: {
+            type: Schema.Types.ObjectId,
+            ref: "Payment",
             default: null,
         },
 

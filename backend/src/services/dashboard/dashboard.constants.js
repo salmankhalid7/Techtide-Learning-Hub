@@ -16,6 +16,9 @@ import Question from "../../models/question.model.js";
 import Enrollment from "../../models/enrollment.model.js";
 import Progress from "../../models/progress.model.js";
 import Attempt from "../../models/attempt.model.js";
+import Order from "../../models/order.model.js";
+import Payment from "../../models/payment.model.js";
+import Wallet from "../../models/wallet.model.js";
 
 import { COURSE_STATUS } from "../../constants/course.constants.js";
 import { ENROLLMENT_STATUS } from "../../constants/enrollment.constants.js";
@@ -71,6 +74,9 @@ export {
   Enrollment,
   Progress,
   Attempt,
+  Order,
+  Payment,
+  Wallet,
   COURSE_STATUS,
   ENROLLMENT_STATUS,
   MODULE_STATUS,

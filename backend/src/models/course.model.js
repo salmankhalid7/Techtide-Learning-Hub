@@ -61,6 +61,13 @@ const statisticsSchema = new Schema(
       default: 0,
       min: 0,
     },
+    // Marketplace: number of paid course sales. Incremented on each completed
+    // paid purchase (not free enrollments).
+    totalSales: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     totalReviews: {
       type: Number,
       default: 0,
@@ -71,6 +78,13 @@ const statisticsSchema = new Schema(
       default: 0,
       min: 0,
       max: 5,
+    },
+    // Rating distribution keyed by star count (1..5) onto the number of
+    // approved reviews. Derived by the review service whenever a review is
+    // approved/rejected/deleted/updated.
+    ratingDistribution: {
+      type: Schema.Types.Mixed,
+      default: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
     },
     totalDuration: {
       type: Number,

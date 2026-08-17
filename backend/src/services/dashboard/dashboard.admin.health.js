@@ -9,16 +9,21 @@
  * runtime.
  */
 
+import mongoose from "mongoose";
+
 import {
   User,
   Course,
   Enrollment,
   Progress,
   Attempt,
+  Order,
+  Payment,
   ATTEMPT_STATUS,
   RECENT_ACTIVITY_PER_SOURCE,
   RECENT_ACTIVITY_TOTAL,
 } from "./dashboard.constants.js";
+import { PAYMENT_STATUS } from "../../constants/payment.constants.js";
 
 const adminHealth = {
   /* ------------------------------------------------------------------------ */
@@ -87,14 +92,13 @@ const adminHealth = {
   /**
    * Revenue analytics for admins.
    *
-   * Placeholder: the Payments module is not implemented yet, so the response
-   * shape is fixed up-front with zeroed values. This lets the frontend
-   * integrate now and later plugs into Stripe/Razorpay/PayPal without changing
-   * the API contract.
+   * Computes platform-wide revenue from succeeded `Payment` records (net of
+   * refunds). All monetary totals are returned un-rounded as stored integers /
+   * floats so the frontend controls display formatting.
    *
-   * @param {Object} query
+   * @param {Object} query - { year?, limit?, page?, limit? }
    * @returns {Promise<{
-   *   overview: { totalRevenue, monthlyRevenue, yearlyRevenue, averageOrderValue },
+   *   overview: { totalRevenue, monthlyRevenue, yearlyRevenue, averageOrderValue, currency },
    *   monthlyRevenue: [],
    *   topSellingCourses: [],
    *   transactions: [],
@@ -102,27 +106,161 @@ const adminHealth = {
    *   refunds: { totalRefunds, refundedAmount }
    * }>}
    */
-  // eslint-disable-next-line no-unused-vars
-  async getRevenueAnalytics(query) {
+  async getRevenueAnalytics(query = {}) {
+    const year = Number(query.year) || new Date().getFullYear();
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 10));
+
+    const startYear = new Date(`${year}-01-01T00:00:00.000Z`);
+    const endYear = new Date(`${year + 1}-01-01T00:00:00.000Z`);
+
+    const succeeded = { status: PAYMENT_STATUS.SUCCEEDED };
+
+    // Aggregate refunds across all succeeded payments.
+    const refundAgg = await Payment.aggregate([
+      { $match: { status: PAYMENT_STATUS.SUCCEEDED } },
+      {
+        $group: {
+          _id: null,
+          totalRefunds: { $sum: { $size: { $ifNull: ["$refunds", []] } } },
+          refundedAmount: { $sum: { $ifNull: ["$refundedAmount", 0] } },
+        },
+      },
+    ]);
+    const refunds = refundAgg[0] || { totalRefunds: 0, refundedAmount: 0 };
+
+    // Totals: gross succeeded amount, net = gross - refunded.
+    const totalAgg = await Payment.aggregate([
+      { $match: succeeded },
+      {
+        $group: {
+          _id: null,
+          gross: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    const total = totalAgg[0] || { gross: 0, count: 0 };
+    const totalRevenue = Math.max(0, total.gross - refunds.refundedAmount);
+
+    // Monthly revenue for the requested year (net).
+    const monthlyRevenue = await Payment.aggregate([
+      {
+        $match: {
+          status: PAYMENT_STATUS.SUCCEEDED,
+          paidAt: { $gte: startYear, $lt: endYear },
+        },
+      },
+      {
+        $group: {
+          _id: { month: { $month: "$paidAt" } },
+          revenue: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          month: "$_id.month",
+          revenue: 1,
+          count: 1,
+        },
+      },
+      { $sort: { month: 1 } },
+    ]);
+
+    // Yearly revenue (net) for the requested year.
+    const yearlyAgg = await Payment.aggregate([
+      {
+        $match: {
+          status: PAYMENT_STATUS.SUCCEEDED,
+          paidAt: { $gte: startYear, $lt: endYear },
+        },
+      },
+      { $group: { _id: null, revenue: { $sum: "$amount" } } },
+    ]);
+    const yearlyRevenue = yearlyAgg[0]?.revenue || 0;
+
+    const averageOrderValue = total.count > 0 ? total.gross / total.count : 0;
+
+    // Top-selling courses via Order items (only paid orders).
+    const topSellingCourses = await Order.aggregate([
+      { $match: { status: "PAID" } },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.course",
+          sales: { $sum: "$items.quantity" },
+          revenue: { $sum: "$items.unitPrice" },
+        },
+      },
+      { $sort: { sales: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: "courses",
+          localField: "_id",
+          foreignField: "_id",
+          as: "course",
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          courseId: "$_id",
+          title: { $arrayElemAt: ["$course.title", 0] },
+          slug: { $arrayElemAt: ["$course.slug", 0] },
+          sales: 1,
+          revenue: 1,
+        },
+      },
+    ]);
+
+    // Recent transactions (payments with order/course context).
+    const transactions = await Payment.aggregate([
+      { $match: succeeded },
+      { $sort: { createdAt: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+      {
+        $project: {
+          _id: 1,
+          amount: 1,
+          currency: 1,
+          provider: 1,
+          status: 1,
+          createdAt: 1,
+          refundedAmount: 1,
+        },
+      },
+    ]);
+
+    // Payment method/provider distribution.
+    const paymentMethods = await Payment.aggregate([
+      { $match: succeeded },
+      { $group: { _id: "$provider", count: { $sum: 1 }, amount: { $sum: "$amount" } } },
+      { $project: { _id: 0, provider: "$_id", count: 1, amount: 1 } },
+      { $sort: { count: -1 } },
+    ]);
+
+    const currencies = await Payment.distinct("currency", succeeded);
+    const currency = currencies.length === 1 ? currencies[0] : currencies.join("/");
+
     return {
       overview: {
-        totalRevenue: 0,
-        monthlyRevenue: 0,
-        yearlyRevenue: 0,
-        averageOrderValue: 0,
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        monthlyRevenue: Math.round((monthlyRevenue.reduce((s, m) => s + m.revenue, 0)) * 100) / 100,
+        yearlyRevenue: Math.round(yearlyRevenue * 100) / 100,
+        averageOrderValue: Math.round(averageOrderValue * 100) / 100,
+        currency,
       },
-
-      monthlyRevenue: [],
-
-      topSellingCourses: [],
-
-      transactions: [],
-
-      paymentMethods: [],
-
+      monthlyRevenue,
+      topSellingCourses,
+      transactions,
+      paymentMethods,
       refunds: {
-        totalRefunds: 0,
-        refundedAmount: 0,
+        totalRefunds: refunds.totalRefunds,
+        refundedAmount: Math.round(refunds.refundedAmount * 100) / 100,
       },
     };
   },

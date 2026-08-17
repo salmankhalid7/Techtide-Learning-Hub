@@ -164,6 +164,49 @@ const config = Object.freeze({
       ? Number(process.env.AI_EVAL_TIMEOUT_MS)
       : 30000,
   }),
+
+  // Payments / marketplace is optional — the app boots without any payment
+  // keys configured. Each provider block uses `process.env.X || undefined` so
+  // it never crashes when unset. Providers report "not configured" at runtime
+  // until real/sandbox credentials are added.
+  payment: Object.freeze({
+    // Platform commission (percent of each sale retained by the platform).
+    commissionRatePercent: process.env.PAYMENT_COMMISSION_RATE
+      ? Number(process.env.PAYMENT_COMMISSION_RATE)
+      : 10,
+
+    // Base URL used to build webhook links / redirect URLs.
+    webhookBaseUrl: process.env.PAYMENT_WEBHOOK_BASE_URL || undefined,
+    appBaseUrl: process.env.PAYMENT_APP_BASE_URL || undefined,
+
+    stripe: Object.freeze({
+      enabled: process.env.STRIPE_ENABLED === "true",
+      secretKey: process.env.STRIPE_SECRET_KEY || undefined,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || undefined,
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || undefined,
+      currency: process.env.STRIPE_CURRENCY || "usd",
+    }),
+
+    jazzcash: Object.freeze({
+      enabled: process.env.JAZZCASH_ENABLED === "true",
+      merchantId: process.env.JAZZCASH_MERCHANT_ID || undefined,
+      password: process.env.JAZZCASH_PASSWORD || undefined,
+      integritySalt: process.env.JAZZCASH_INTEGRITY_SALT || undefined,
+      currency: process.env.JAZZCASH_CURRENCY || "PKR",
+      // Sandbox vs live endpoint.
+      sandbox: process.env.JAZZCASH_SANDBOX !== "false",
+    }),
+
+    easypaisa: Object.freeze({
+      enabled: process.env.EASYPAISA_ENABLED === "true",
+      merchantId: process.env.EASYPAISA_MERCHANT_ID || undefined,
+      storeId: process.env.EASYPAISA_STORE_ID || undefined,
+      apiSecret: process.env.EASYPAISA_API_SECRET || undefined,
+      currency: process.env.EASYPAISA_CURRENCY || "PKR",
+      // Sandbox vs live endpoint.
+      sandbox: process.env.EASYPAISA_SANDBOX !== "false",
+    }),
+  }),
 });
 
 export default config;

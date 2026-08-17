@@ -18,6 +18,8 @@ import {
   Quiz,
   QUIZ_STATUS,
   Enrollment,
+  Order,
+  Wallet,
   MODULE_STATUS,
   LESSON_STATUS_ENUM,
   COURSE_STATUS,
@@ -26,6 +28,7 @@ import {
   DEFAULT_RECENT_ENROLLMENTS_LIMIT,
   DEFAULT_TOP_COURSES_LIMIT,
 } from "./dashboard.constants.js";
+import { TRANSACTION_TYPES } from "../../constants/payout.constants.js";
 
 const instructorAnalytics = {
   /* ------------------------------------------------------------------------ */
@@ -109,27 +112,118 @@ const instructorAnalytics = {
   /* ------------------------------------------------------------------------ */
 
   /**
-   * Earnings dashboard foundation.
-   * Payments are not implemented yet, so the structure is returned with
-   * zeroed values that can be populated once the Payment module exists.
+   * Earnings dashboard.
+   *
+   * Derived from the instructor's `Wallet` ledger (net-of-commission sales
+   * credits, refund debits, withdrawals) plus their paid orders for the
+   * course-level and monthly breakdowns.
+   *
    * @param {string} instructorId
+   * @param {{ year?: number }} [filters]
+   * @returns {Promise<{
+   *   overview: { totalRevenue, totalSales, averageOrderValue, refundedAmount, withdrawnAmount, balance, currency },
+   *   monthlyRevenue: [],
+   *   recentTransactions: [],
+   *   topSellingCourses: []
+   * }>}
    */
-  // eslint-disable-next-line no-unused-vars
-  async getEarningsStats(instructorId) {
+  async getEarningsStats(instructorId, filters = {}) {
+    const { year } = filters;
+    const instructorObjectId = new mongoose.Types.ObjectId(instructorId);
+
+    const wallet = await Wallet.findOne({ instructor: instructorObjectId });
+    const transactions = [...(wallet?.transactions || [])].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+    // Sales / refunds / withdrawals from the ledger.
+    const salesTx = transactions.filter((t) => t.type === TRANSACTION_TYPES.COURSE_SALE);
+    const refundTx = transactions.filter((t) => t.type === TRANSACTION_TYPES.REFUND);
+    const withdrawalTx = transactions.filter((t) => t.type === TRANSACTION_TYPES.WITHDRAWAL);
+
+    const totalRevenue = wallet ? wallet.totalEarned || 0 : 0;
+    const totalSales = salesTx.length;
+    const averageOrderValue = totalSales > 0 ? totalRevenue / totalSales : 0;
+    const refundedAmount = refundTx.reduce((s, t) => s + t.amount, 0);
+    const withdrawnAmount = withdrawalTx.reduce((s, t) => s + t.amount, 0);
+    const balance = wallet ? wallet.balance || 0 : 0;
+    const currency = wallet?.currency || "USD";
+
+    // Monthly revenue: course_sale credits optionally for a given year.
+    const filteredSales = year
+      ? salesTx.filter((t) => new Date(t.createdAt).getFullYear() === Number(year))
+      : salesTx;
+
+    const monthlyMap = new Map();
+    for (const t of filteredSales) {
+      const d = new Date(t.createdAt);
+      const month = d.getMonth() + 1;
+      const entry = monthlyMap.get(month) || { month, revenue: 0, count: 0 };
+      entry.revenue += t.amount;
+      entry.count += 1;
+      monthlyMap.set(month, entry);
+    }
+    const monthlyRevenue = [...monthlyMap.values()].sort((a, b) => a.month - b.month);
+
+    // Top-selling courses: from the instructor's paid orders.
+    const topSellingCourses = await Order.aggregate([
+      { $match: { status: "PAID", "items.instructor": instructorObjectId } },
+      { $unwind: "$items" },
+      {
+        $match: { "items.instructor": instructorObjectId },
+      },
+      {
+        $group: {
+          _id: "$items.course",
+          sales: { $sum: "$items.quantity" },
+          revenue: { $sum: "$items.unitPrice" },
+        },
+      },
+      { $sort: { sales: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: "courses",
+          localField: "_id",
+          foreignField: "_id",
+          as: "course",
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          courseId: "$_id",
+          title: { $arrayElemAt: ["$course.title", 0] },
+          slug: { $arrayElemAt: ["$course.slug", 0] },
+          sales: 1,
+          revenue: 1,
+        },
+      },
+    ]);
+
+    const recentTransactions = transactions.slice(0, 10).map((t) => ({
+      type: t.type,
+      direction: t.direction,
+      amount: t.amount,
+      currency: t.currency || currency,
+      balanceAfter: t.balanceAfter,
+      description: t.description,
+      createdAt: t.createdAt,
+    }));
+
     return {
       overview: {
-        totalRevenue: 0,
-        totalSales: 0,
-        averageOrderValue: 0,
-        refundedAmount: 0,
-        currency: "USD",
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        totalSales,
+        averageOrderValue: Math.round(averageOrderValue * 100) / 100,
+        refundedAmount: Math.round(refundedAmount * 100) / 100,
+        withdrawnAmount: Math.round(withdrawnAmount * 100) / 100,
+        balance: Math.round(balance * 100) / 100,
+        currency,
       },
-
-      monthlyRevenue: [],
-
-      recentTransactions: [],
-
-      topSellingCourses: [],
+      monthlyRevenue,
+      recentTransactions,
+      topSellingCourses,
     };
   },
 
