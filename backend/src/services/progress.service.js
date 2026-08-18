@@ -9,8 +9,11 @@ import Enrollment from "../models/enrollment.model.js";
 import Progress from "../models/progress.model.js";
 import Lesson from "../models/lesson.model.js";
 import Module from "../models/module.model.js";
+import Course from "../models/course.model.js";
+import User from "../models/user.model.js";
 
 import logger from "../config/logger.js";
+import emailService from "./email.service.js";
 
 import { NotFoundError } from "../errors/index.js";
 
@@ -241,10 +244,31 @@ export async function updateLessonProgress({
         );
 
         if (progress.completionPercentage === 100) {
+            const firstCompletion = !progress.isCourseCompleted;
             progress.isCourseCompleted = true;
             progress.completedAt ??= new Date();
             enrollment.status = ENROLLMENT_STATUS.COMPLETED;
             enrollment.completedAt = new Date();
+
+            // Best-effort "course completed" email (only on first completion).
+            if (firstCompletion) {
+                try {
+                    const [course, student] = await Promise.all([
+                        Course.findById(courseId).select("title").lean(),
+                        User.findById(studentId).select("email fullName").lean(),
+                    ]);
+                    if (student?.email) {
+                        await emailService.sendCourseCompletion({
+                            to: student.email,
+                            fullName: student.fullName || "there",
+                            courseName: course?.title || "Course",
+                            percent: 100,
+                        });
+                    }
+                } catch (e) {
+                    logger.warn("Course completion email skipped.", { error: e.message });
+                }
+            }
         }
 
         enrollment.lastAccessedAt = new Date();

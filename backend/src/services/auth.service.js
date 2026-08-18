@@ -1,6 +1,6 @@
 import User from "../models/user.model.js";
 
-import { NotFoundError, UnauthorizedError } from "../errors/index.js";
+import { NotFoundError, UnauthorizedError, BadRequestError } from "../errors/index.js";
 
 import RefreshToken from "../models/refreshToken.model.js";
 import {
@@ -9,6 +9,16 @@ import {
 } from "./token.service.js";
 import jwt from "jsonwebtoken";
 import AppError from "../errors/AppError.js";
+import {
+  generateEmailToken,
+  hashToken,
+} from "../utils/auth/index.js";
+import emailService from "./email.service.js";
+
+// Token TTLs (ms).
+const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;   // 24h
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;          // 1h
+
 class AuthService {
   /**
    * Register a new user.
@@ -45,6 +55,22 @@ class AuthService {
       password,
       role,
     });
+
+    // Send an email-verification link (best-effort — never blocks account
+    // creation if mail is unconfigured or the send fails).
+    try {
+      const { token: rawToken, hashedToken } = generateEmailToken();
+      user.emailVerificationToken = hashedToken;
+      user.emailVerificationExpires = new Date(Date.now() + VERIFY_TOKEN_TTL_MS);
+      await user.save();
+      await emailService.sendEmailVerification({
+        to: user.email,
+        fullName: user.fullName,
+        token: rawToken,
+      });
+    } catch (err) {
+      // Mail failure must not prevent registration.
+    }
 
 const accessToken = generateAccessToken(user._id);
 
@@ -228,6 +254,110 @@ return {
       accessToken,
       refreshToken,
     };
+  }
+
+  /**
+   * Generate an email-verification token for a user and email it.
+   */
+  async sendVerificationEmail(email) {
+    const user = await User.findOne({ email });
+    if (!user) throw new NotFoundError("User not found");
+
+    if (user.isEmailVerified) {
+      throw new BadRequestError("Email is already verified.");
+    }
+
+    const { token: rawToken, hashedToken } = generateEmailToken();
+    user.emailVerificationToken = hashedToken;
+    user.emailVerificationExpires = new Date(Date.now() + VERIFY_TOKEN_TTL_MS);
+    await user.save();
+
+    await emailService.sendEmailVerification({
+      to: user.email,
+      fullName: user.fullName,
+      token: rawToken,
+    });
+
+    return { message: "Verification email sent." };
+  }
+
+  /**
+   * Verify a user's email using the raw token from the email link.
+   */
+  async verifyEmail(token) {
+    if (!token) {
+      throw new BadRequestError("Verification token is required.");
+    }
+    const hashed = hashToken(token);
+    const user = await User.findOne({
+      emailVerificationToken: hashed,
+      emailVerificationExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      throw new BadRequestError("Verification token is invalid or has expired.");
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationToken = null;
+    user.emailVerificationExpires = null;
+    await user.save();
+
+    // Welcome the newly verified user.
+    await emailService.sendWelcome({ to: user.email, fullName: user.fullName });
+
+    return { message: "Email verified successfully.", user: user.toJSON() };
+  }
+
+  /**
+   * Generate a password-reset token and email it.
+   */
+  async forgotPassword(email) {
+    const user = await User.findOne({ email });
+    if (!user) {
+      // Do not reveal whether the email exists.
+      return { message: "If that email is registered, a reset link has been sent." };
+    }
+
+    const { token: rawToken } = generateEmailToken();
+    user.passwordResetToken = hashToken(rawToken);
+    user.passwordResetExpires = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+    await user.save();
+
+    await emailService.sendPasswordReset({
+      to: user.email,
+      fullName: user.fullName,
+      token: rawToken,
+    });
+
+    return { message: "If that email is registered, a reset link has been sent." };
+  }
+
+  /**
+   * Reset a user's password using the token + new password.
+   */
+  async resetPassword(token, newPassword) {
+    if (!token || !newPassword) {
+      throw new BadRequestError("Token and new password are required.");
+    }
+
+    const hashed = hashToken(token);
+    const user = await User.findOne({
+      passwordResetToken: hashed,
+      passwordResetExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      throw new BadRequestError("Reset token is invalid or has expired.");
+    }
+
+    user.password = newPassword;
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    user.passwordChangedAt = new Date();
+    await user.save();
+
+    return { message: "Password reset successfully." };
   }
 }
 

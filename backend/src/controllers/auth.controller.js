@@ -122,6 +122,57 @@ async login(req, res, next) {
       next(error);
     }
   }
+
+  /**
+   * Verify a user's email address (public — token from email link).
+   */
+  async verifyEmail(req, res, next) {
+    try {
+      const result = await authService.verifyEmail(req.query.token || req.params.token);
+      return res.status(200).json({ success: true, statusCode: 200, ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Resend the email-verification link (public).
+   */
+  async resendVerification(req, res, next) {
+    try {
+      const result = await authService.sendVerificationEmail(req.body.email);
+      return res.status(200).json({ success: true, statusCode: 200, ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Request a password reset (public) — sends a reset link.
+   */
+  async forgotPassword(req, res, next) {
+    try {
+      const result = await authService.forgotPassword(req.body.email);
+      return res.status(200).json({ success: true, statusCode: 200, ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Reset a password using the token from the reset link (public).
+   */
+  async resetPassword(req, res, next) {
+    try {
+      const result = await authService.resetPassword(
+        req.body.token,
+        req.body.newPassword
+      );
+      return res.status(200).json({ success: true, statusCode: 200, ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export default new AuthController();

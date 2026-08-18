@@ -36,6 +36,8 @@ import {
     ForbiddenError,
 } from "../errors/index.js";
 import logger from "../config/logger.js";
+import { notifyUser } from "./notification.service.js";
+import { NOTIFICATION_TYPES } from "../constants/notification.constants.js";
 
 const { Types } = mongoose;
 
@@ -90,6 +92,26 @@ export const createReview = async ({ studentId, courseId, data }) => {
     });
 
     logger.info(`Review created (${review._id}) for course ${courseId}`);
+
+    // Notify the course instructor that a new review was submitted (pending
+    // moderation). Best effort — never throw if the course/instructor lookup fails.
+    try {
+        const course = await Course.findById(courseId).select("instructor title");
+        const instructor = course?.instructor;
+        if (instructor) {
+            await notifyUser({
+                recipient: instructor,
+                type: NOTIFICATION_TYPES.REVIEW_RECEIVED,
+                title: "New review received",
+                body: `A student rated "${course.title || "your course"}" ${rating}/5 and it's pending approval.`,
+                data: { course: courseId, review: review._id, rating },
+                actor: studentId,
+            });
+        }
+    } catch (e) {
+        logger.warn("Failed to notify course instructor of new review.", { error: e.message });
+    }
+
     return review;
 };
 
@@ -243,6 +265,27 @@ export const moderateReview = async ({ reviewId, status, moderator, note = "" })
     // APPROVED->REJECTED, APPROVED->FLAGGED).
     if (wasCounted !== nowCounted) {
         await _recomputeCourseStats(review.course);
+    }
+
+    // Notify the student author of the moderation outcome.
+    if (review.student) {
+        const titleByStatus = {
+            [REVIEW_STATUS.APPROVED]: "Your review is live",
+            [REVIEW_STATUS.REJECTED]: "Your review was not approved",
+            [REVIEW_STATUS.FLAGGED]: "Your review was flagged",
+        };
+        await notifyUser({
+            recipient: review.student,
+            type: NOTIFICATION_TYPES.REVIEW_MODERATED,
+            title: titleByStatus[status] || "Review update",
+            body:
+                status === REVIEW_STATUS.APPROVED
+                    ? "Your review has been approved and is now visible on the course."
+                    : status === REVIEW_STATUS.REJECTED
+                        ? "Unfortunately your review was not approved."
+                        : "Your review is currently under review.",
+            data: { course: review.course, review: review._id, status },
+        }).catch(() => {});
     }
 
     return review;

@@ -10,6 +10,7 @@ import Enrollment from "../models/enrollment.model.js";
 import Progress from "../models/progress.model.js";
 
 import logger from "../config/logger.js";
+import User from "../models/user.model.js";
 
 import { COURSE_STATUS } from "../constants/course.constants.js";
 import { ENROLLMENT_STATUS } from "../constants/enrollment.constants.js";
@@ -20,6 +21,9 @@ import {
     ConflictError,
     NotFoundError,
 } from "../errors/index.js";
+import { notifyUser } from "./notification.service.js";
+import { NOTIFICATION_TYPES } from "../constants/notification.constants.js";
+import emailService from "./email.service.js";
 
 // ── Private helpers ────────────────────────────────────────────────────────
 
@@ -160,6 +164,38 @@ export async function enrollStudent({ courseId, studentId }) {
             studentId,
             courseId,
         });
+
+        // ── Emit notifications (post-commit) ──
+        const courseTitle = course.title || "Course";
+        await notifyUser({
+            recipient: studentId,
+            type: NOTIFICATION_TYPES.COURSE_ENROLLED,
+            title: "Enrolled successfully",
+            body: `You are now enrolled in "${courseTitle}".`,
+            data: { course: courseId, enrollment: enrollment._id },
+        });
+        await notifyUser({
+            recipient: course.instructor,
+            type: NOTIFICATION_TYPES.COURSE_ENROLLED,
+            title: "New student",
+            body: `A new student enrolled in "${courseTitle}".`,
+            data: { course: courseId },
+            actor: studentId,
+        });
+
+        // ── Best-effort transactional emails (never break enrollment) ──
+        try {
+            const student = await User.findById(studentId).select("email fullName").lean();
+            if (student?.email) {
+                await emailService.sendEnrollmentConfirmation({
+                    to: student.email,
+                    fullName: student.fullName || "there",
+                    courseName: courseTitle,
+                });
+            }
+        } catch (e) {
+            logger.warn("Enrollment email skipped.", { error: e.message });
+        }
 
         return { enrollment, progress };
     } catch (error) {

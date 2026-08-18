@@ -87,6 +87,27 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Email verification: hashed token + expiry (raw token is emailed; only
+    // the hash is stored).
+    emailVerificationToken: {
+      type: String,
+      default: null,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+    },
+
+    // Password reset: hashed token + expiry.
+    passwordResetToken: {
+      type: String,
+      default: null,
+    },
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+    },
+
     refreshToken: {
       type: String,
       default: null,

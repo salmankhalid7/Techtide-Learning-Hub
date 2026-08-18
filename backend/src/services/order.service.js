@@ -15,6 +15,7 @@ import Order from "../models/order.model.js";
 import Payment from "../models/payment.model.js";
 import Coupon from "../models/coupon.model.js";
 import Wallet from "../models/wallet.model.js";
+import User from "../models/user.model.js";
 
 import { ORDER_STATUS } from "../constants/order.constants.js";
 import {
@@ -35,6 +36,9 @@ import {
 } from "../errors/index.js";
 import logger from "../config/logger.js";
 import { config } from "../config/index.js";
+import { notifyUser } from "./notification.service.js";
+import { NOTIFICATION_TYPES } from "../constants/notification.constants.js";
+import emailService from "./email.service.js";
 
 /**
  * Resolve a course's effective sale price and currency.
@@ -338,6 +342,60 @@ export const grantPaidEnrollment = async ({ paymentId }) => {
         });
 
         await session.commitTransaction();
+
+        // ── Emit notifications (post-commit; never fires on rollback) ──
+        const courseId = order.items[0].course;
+        const courseTitle = order.items[0].courseTitle || "Course";
+        const instructorId = order.items[0].instructor;
+
+        // Student: order/payment completed -> enrolled.
+        await notifyUser({
+            recipient: payment.student,
+            type: NOTIFICATION_TYPES.PAYMENT_COMPLETED,
+            title: "Payment successful",
+            body: `Your payment for "${courseTitle}" was successful. You are now enrolled.`,
+            data: { course: courseId, order: order._id, payment: payment._id },
+        });
+        // Instructor: a student purchased their course.
+        await notifyUser({
+            recipient: instructorId,
+            type: NOTIFICATION_TYPES.PAYMENT_COMPLETED,
+            title: "New sale 🎉",
+            body: `A student purchased your course "${courseTitle}".`,
+            data: { course: courseId, payment: payment._id },
+            actor: payment.student,
+        });
+
+        // ── Best-effort transactional emails (never break the sale) ──
+        try {
+            const [student, instructor] = await Promise.all([
+                User.findById(payment.student).select("email fullName").lean(),
+                User.findById(instructorId).select("email fullName").lean(),
+            ]);
+            const amount = payment.amount;
+            const currency = payment.currency || "USD";
+            if (student?.email) {
+                await emailService.sendPaymentConfirmation({
+                    to: student.email,
+                    fullName: student.fullName || "there",
+                    courseName: courseTitle,
+                    amount,
+                    currency,
+                });
+            }
+            if (instructor?.email) {
+                await emailService.sendInstructorNotification({
+                    to: instructor.email,
+                    fullName: instructor.fullName || "there",
+                    subject: "New sale 🎉",
+                    message: "A student purchased your course.",
+                    courseName: courseTitle,
+                });
+            }
+        } catch (e) {
+            logger.warn("Payment emails skipped.", { error: e.message });
+        }
+
         return { enrollment: enrollment[0], alreadyEnrolled: false };
     } catch (error) {
         await session.abortTransaction();

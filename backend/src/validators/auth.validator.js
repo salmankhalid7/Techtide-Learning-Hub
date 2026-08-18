@@ -19,6 +19,18 @@ const confirmPasswordRule = () =>
       return true;
     });
 
+/** Confirm check comparing against a named password field. */
+const confirmFieldRule = (passwordField) =>
+  body("confirmPassword")
+    .notEmpty()
+    .withMessage("Confirm password is required.")
+    .custom((value, { req }) => {
+      if (value !== req.body[passwordField]) {
+        throw new Error("Passwords do not match.");
+      }
+      return true;
+    });
+
 /**
  * Validation rules for user registration.
  */
@@ -58,4 +70,29 @@ export const resetPasswordValidator = [
   passwordRule(),
   passwordStrengthRule(),
   confirmPasswordRule(),
+];
+
+/**
+ * Validation rules for verifying an email (token in query or param).
+ */
+export const verifyEmailValidator = [
+  body("token").optional(),
+];
+
+/**
+ * Validation rules for resending the verification email.
+ */
+export const resendVerificationValidator = [
+  emailRule(),
+];
+
+/**
+ * Validation rules for resetting a password via the auth service
+ * (uses `newPassword` field alongside `token` + `confirmPassword`).
+ */
+export const resetPasswordRequestValidator = [
+  body("token").notEmpty().withMessage("Token is required."),
+  passwordRule("newPassword"),
+  passwordStrengthRule("newPassword"),
+  confirmFieldRule("newPassword"),
 ];

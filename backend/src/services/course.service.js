@@ -4,6 +4,8 @@ import {
   COURSE_VISIBILITY,
 } from "../constants/course.constants.js";
 import { NotFoundError, ForbiddenError, BadRequestError } from "../errors/index.js";
+import { notifyUser } from "./notification.service.js";
+import { NOTIFICATION_TYPES } from "../constants/notification.constants.js";
 
 // ── Create Course ──────────────────────────────────────────
 // Creates a new course as a draft owned by the authenticated user.
@@ -193,6 +195,19 @@ const publishCourse = async (courseId, user) => {
   course.publishedAt = new Date();
 
   await course.save();
+
+  // Notify the course owner that their course is now published (best effort).
+  try {
+    await notifyUser({
+      recipient: course.instructor,
+      type: NOTIFICATION_TYPES.COURSE_PUBLISHED,
+      title: "Your course is live 🎉",
+      body: `"${course.title}" has been published and is now available to students.`,
+      data: { course: course._id },
+    });
+  } catch (e) {
+    // Notification failure must not break publishing.
+  }
 
   return course;
 };

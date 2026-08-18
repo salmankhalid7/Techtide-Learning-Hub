@@ -22,6 +22,10 @@ import {
 import logger from "../config/logger.js";
 import { buildQuestionSnapshots } from "../helpers/attemptSnapshot.helper.js";
 import { gradeAttempt } from "../helpers/attemptGrading.helper.js";
+import { notifyUser } from "./notification.service.js";
+import { NOTIFICATION_TYPES } from "../constants/notification.constants.js";
+import emailService from "./email.service.js";
+import User from "../models/user.model.js";
 
 /* -------------------------------------------------------------------------- */
 /*                              Private Helpers                               */
@@ -509,6 +513,37 @@ const submitAttempt = async ({ attemptId, studentId }) => {
         logger.info(
             `Attempt submitted — id: ${attemptId}, score: ${result.percentage}%, passed: ${result.passed}`
         );
+
+        // ── 8. Notify the student of their quiz result (post-commit) ──
+        await notifyUser({
+            recipient: attempt.student,
+            type: NOTIFICATION_TYPES.QUIZ_RESULT,
+            title: `Quiz result: ${result.passed ? "Passed" : "Needs improvement"}`,
+            body: `You scored ${result.percentage}% on your quiz attempt.`,
+            data: {
+                attempt: attemptId,
+                quiz: attempt.quiz || null,
+                module: attempt.module || null,
+                percentage: result.percentage,
+                passed: result.passed,
+            },
+        });
+
+        // ── Best-effort quiz result email (never break submission) ──
+        try {
+            const student = await User.findById(attempt.student).select("email fullName").lean();
+            if (student?.email) {
+                await emailService.sendQuizResult({
+                    to: student.email,
+                    fullName: student.fullName || "there",
+                    quizName: "Quiz",
+                    percentage: result.percentage,
+                    passed: result.passed,
+                });
+            }
+        } catch (e) {
+            logger.warn("Quiz result email skipped.", { error: e.message });
+        }
 
         return attempt;
     } catch (error) {

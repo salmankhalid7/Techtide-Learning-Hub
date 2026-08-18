@@ -28,6 +28,8 @@ import { NotFoundError, BadRequestError } from "../errors/index.js";
 import logger from "../config/logger.js";
 import { getGateway } from "./payments/gateway.registry.js";
 import { grantPaidEnrollment } from "./order.service.js";
+import { notifyUser } from "./notification.service.js";
+import { NOTIFICATION_TYPES } from "../constants/notification.constants.js";
 
 /**
  * Initiate a payment with the provider (create the checkout session).
@@ -311,6 +313,32 @@ export const refundPayment = async ({
         }
 
         await session.commitTransaction();
+
+        // ── Emit notifications (post-commit, only after a successful refund) ──
+        const order = payment.order;
+        const item = order.items?.[0];
+        const courseTitle = item?.courseTitle || "Course";
+
+        // Student: refund processed for their purchase.
+        await notifyUser({
+            recipient: payment.student,
+            type: NOTIFICATION_TYPES.PAYMENT_REFUNDED,
+            title: isFull ? "Refund processed" : "Partial refund processed",
+            body: `Your refund of ${payment.currency} ${refundAmount} for "${courseTitle}" was processed.`,
+            data: { course: item?.course, order: order._id, payment: payment._id, amount: refundAmount },
+        });
+
+        // Instructor (full refund): their wallet was debited.
+        if (isFull && item?.instructor) {
+            await notifyUser({
+                recipient: item.instructor,
+                type: NOTIFICATION_TYPES.PAYMENT_REFUNDED,
+                title: "Course refunded",
+                body: `A sale for "${courseTitle}" was refunded. Your wallet was adjusted.`,
+                data: { course: item.course, payment: payment._id, amount: refundAmount },
+            });
+        }
+
         return Payment.findById(paymentId);
     } catch (error) {
         await session.abortTransaction();

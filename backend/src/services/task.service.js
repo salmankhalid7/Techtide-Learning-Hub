@@ -27,6 +27,10 @@ import {
 } from "../errors/index.js";
 
 import logger from "../config/logger.js";
+import { notifyUser } from "./notification.service.js";
+import { NOTIFICATION_TYPES } from "../constants/notification.constants.js";
+import emailService from "./email.service.js";
+import User from "../models/user.model.js";
 
 import {
     TASK_STATUS,
@@ -633,6 +637,31 @@ export const submitTask = async ({ taskId, user, data }) => {
         await _recordTaskCompletionInProgress(submission, task, user);
 
         logger.info(`Task evaluated: ${submission._id} score=${submission.finalScore}`);
+
+        // Notify the student their task was evaluated.
+        await notifyUser({
+            recipient: user.id,
+            type: NOTIFICATION_TYPES.TASK_EVALUATED,
+            title: "Task evaluated",
+            body: `Your submission for "${task.title}" was graded: score ${submission.finalScore}/${task.maxScore}`,
+            data: { task: task._id, submission: submission._id, course: task.course, score: submission.finalScore },
+        });
+
+        // ── Best-effort task evaluation email (never break grading) ──
+        try {
+            const student = await User.findById(user.id).select("email fullName").lean();
+            if (student?.email) {
+                await emailService.sendTaskEvaluation({
+                    to: student.email,
+                    fullName: student.fullName || "there",
+                    taskName: task.title || "Task",
+                    score: submission.finalScore,
+                    maxScore: task.maxScore,
+                });
+            }
+        } catch (e) {
+            logger.warn("Task evaluation email skipped.", { error: e.message });
+        }
     } else {
         submission.status = TASK_SUBMISSION_STATUS.DRAFT;
         await submission.save();
