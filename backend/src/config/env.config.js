@@ -171,9 +171,10 @@ const config = Object.freeze({
   // until real/sandbox credentials are added.
   payment: Object.freeze({
     // Platform commission (percent of each sale retained by the platform).
+    // Default 30 => the company keeps 30% and the instructor earns 70%.
     commissionRatePercent: process.env.PAYMENT_COMMISSION_RATE
       ? Number(process.env.PAYMENT_COMMISSION_RATE)
-      : 10,
+      : 30,
 
     // Base URL used to build webhook links / redirect URLs.
     webhookBaseUrl: process.env.PAYMENT_WEBHOOK_BASE_URL || undefined,

@@ -57,10 +57,10 @@ const CURRENCIES = Object.freeze({
  * Platform commission configuration keys.
  */
 const COMMISSION = Object.freeze({
-    // Default percentage taken by the platform from each sale.
-    DEFAULT_RATE_PERCENT: 10,
-    // Default percentage of a course order that is an instructor earnings.
-    INSTRUCTOR_SHARE_PERCENT: 90,
+    // Default percentage taken by the platform from each sale (company 30%).
+    DEFAULT_RATE_PERCENT: 30,
+    // Default percentage of a course order that is an instructor earnings (70%).
+    INSTRUCTOR_SHARE_PERCENT: 70,
 });
 
 export {

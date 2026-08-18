@@ -58,9 +58,9 @@ await orderService.grantPaidEnrollment({ paymentId });
 
 console.log(`\n== Instructor earnings (getEarningsStats) ====================`);
 const earnings = await dashboardService.getEarningsStats(instructorId);
-ok(earnings.overview.totalRevenue === 90, `totalRevenue = 90 (net of 10% commission; got ${earnings.overview.totalRevenue})`);
+ok(earnings.overview.totalRevenue === 70, `totalRevenue = 70 (net of 30% commission; got ${earnings.overview.totalRevenue})`);
 ok(earnings.overview.totalSales === 1, `totalSales = 1 (got ${earnings.overview.totalSales})`);
-ok(earnings.overview.balance === 90, `wallet balance = 90 (got ${earnings.overview.balance})`);
+ok(earnings.overview.balance === 70, `wallet balance = 70 (got ${earnings.overview.balance})`);
 ok(earnings.overview.currency === "USD", "currency = USD");
 ok(Array.isArray(earnings.monthlyRevenue), "monthlyRevenue is an array");
 ok(earnings.monthlyRevenue.some((m) => m.month >= 1 && m.month <= 12), "monthlyRevenue has a month bucket");

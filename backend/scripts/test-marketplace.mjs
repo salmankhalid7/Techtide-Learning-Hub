@@ -150,10 +150,10 @@ ok(paidEnrollment?.order?.toString() === String(paidCheckout.order._id), "enroll
 const orderDoc = await db.collection("orders").findOne({ _id: paidCheckout.order._id });
 ok(orderDoc.status === "PAID", "order status = PAID");
 
-// Wallet credited net of commission (80 * 0.9 = 72).
+// Wallet credited net of commission (80 * 0.7 = 56 at a 30% platform split).
 let wallet = await walletService.getWallet({ instructorId });
-ok(wallet.balance === 72, `instructor wallet balance = 72 (got ${wallet.balance})`);
-ok(wallet.totalEarned === 72, `wallet totalEarned = 72 (got ${wallet.totalEarned})`);
+ok(wallet.balance === 56, `instructor wallet balance = 56 (got ${wallet.balance})`);
+ok(wallet.totalEarned === 56, `wallet totalEarned = 56 (got ${wallet.totalEarned})`);
 
 // Course totalSales incremented.
 const paidAfter = await db.collection("courses").findOne({ _id: paidCourse._id });
@@ -163,14 +163,14 @@ console.log(`\n== 5. Invoice ===============================================`);
 const invoice = await invoiceService.generateInvoice({ orderId: String(paidCheckout.order._id) });
 ok(Boolean(invoice.invoiceNumber), "invoice generated");
 ok(invoice.total === 72, `invoice total = 72 (got ${invoice.total})`);
-ok(invoice.instructorNet === 72, `invoice instructorNet = 72 (got ${invoice.instructorNet})`);
-ok(invoice.commission === 8, `invoice commission = 8 (got ${invoice.commission})`);
+ok(invoice.instructorNet === 56, `invoice instructorNet = 56 (got ${invoice.instructorNet})`);
+ok(invoice.commission === 24, `invoice commission = 24 (got ${invoice.commission})`);
 const fetchedInvoice = await invoiceService.getInvoiceForOrder({ orderId: String(paidCheckout.order._id) });
 ok(Boolean(fetchedInvoice), "invoice fetched by order");
 
 console.log(`\n== 6. Wallet transactions ==================================`);
 const tx = await walletService.getTransactions({ instructorId, page: 1, limit: 10 });
-ok(tx.balance === 72, "transactions view balance = 72");
+ok(tx.balance === 56, "transactions view balance = 56");
 ok(tx.transactions.length === 1, `transaction count = 1 (got ${tx.transactions.length})`);
 ok(tx.transactions[0].type === "course_sale", "first transaction is course_sale");
 ok(tx.transactions[0].direction === "credit", "course_sale is a credit");
@@ -203,9 +203,9 @@ ok(approved.status === "APPROVED", "payout APPROVED");
 const paidOut = await payoutService.markPayoutPaid({ payoutId: String(payoutReq._id), admin: adminObj });
 ok(paidOut.status === "PAID", "payout PAID");
 
-// After payout, wallet debited 50 => 72 - 50 = 22.
+// After payout, wallet debited 50 => 56 - 50 = 6.
 const walletAfter = await walletService.getWallet({ instructorId });
-ok(walletAfter.balance === 22, `wallet balance after payout = 22 (got ${walletAfter.balance})`);
+ok(walletAfter.balance === 6, `wallet balance after payout = 6 (got ${walletAfter.balance})`);
 ok(walletAfter.totalWithdrawn === 50, `totalWithdrawn = 50 (got ${walletAfter.totalWithdrawn})`);
 
 const txAfter = await walletService.getTransactions({ instructorId, page: 1, limit: 10 });

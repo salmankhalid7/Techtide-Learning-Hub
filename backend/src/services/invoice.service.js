@@ -17,6 +17,7 @@ import { ORDER_STATUS } from "../constants/order.constants.js";
 import { NotFoundError } from "../errors/index.js";
 import logger from "../config/logger.js";
 import { config } from "../config/index.js";
+import { COMMISSION } from "../constants/payment.constants.js";
 
 /**
  * Generate (or return an existing) invoice for a paid order.
@@ -34,7 +35,7 @@ export const generateInvoice = async ({ orderId, force = false }) => {
     const payment = order.payment || null;
     const item = order.items && order.items[0];
     const commissionRatePercent = Number(
-        config.payment?.commissionRatePercent ?? 10
+        config.payment?.commissionRatePercent ?? COMMISSION.DEFAULT_RATE_PERCENT
     );
     const unitPrice = item ? Number(item.unitPrice || 0) : 0;
     const instructorNet = Math.round(unitPrice * (1 - commissionRatePercent / 100) * 100) / 100;
