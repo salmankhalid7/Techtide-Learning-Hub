@@ -8,6 +8,10 @@ import {
   publishCourse,
   archiveCourse,
   deleteCourse,
+  getFeaturedCourses,
+  getPopularCourses,
+  getTrendingCourses,
+  getRecommendedCourses,
 } from "../controllers/course.controller.js";
 import authenticate from "../middlewares/authenticate.js";
 import authenticateOptional from "../middlewares/authenticateOptional.js";
@@ -18,6 +22,7 @@ import {
   validateUpdateCourse,
   validateCourseId,
   validateCourseFilters,
+  validateDiscoveryRail,
 } from "../validators/course.validator.js";
 
 const router = Router();
@@ -35,7 +40,45 @@ router.get(
   getCourses
 );
 
+// GET /courses/featured — Merchandised rail (admin/instructor-flagged)
+router.get(
+  "/featured",
+  authenticateOptional,
+  validateDiscoveryRail,
+  validate,
+  getFeaturedCourses
+);
+
+// GET /courses/popular — Ranked by enrollments
+router.get(
+  "/popular",
+  authenticateOptional,
+  validateDiscoveryRail,
+  validate,
+  getPopularCourses
+);
+
+// GET /courses/trending — Ranked by recent enrollment activity
+router.get(
+  "/trending",
+  authenticateOptional,
+  validateDiscoveryRail,
+  validate,
+  getTrendingCourses
+);
+
+// GET /courses/recommended — Personalized for a logged-in student (optional auth)
+router.get(
+  "/recommended",
+  authenticateOptional,
+  validateDiscoveryRail,
+  validate,
+  getRecommendedCourses
+);
+
 // GET /courses/:courseId — Get a single course by ID
+// NOTE: must stay AFTER the literal rails above so "featured"/"popular" etc.
+// are not swallowed as an ObjectId.
 router.get(
   "/:courseId",
   validateCourseId,

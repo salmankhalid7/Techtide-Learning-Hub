@@ -14,6 +14,7 @@ import User from "../models/user.model.js";
 
 import logger from "../config/logger.js";
 import emailService from "./email.service.js";
+import certificateService from "./certificate.service.js";
 
 import { NotFoundError } from "../errors/index.js";
 
@@ -243,8 +244,12 @@ export async function updateLessonProgress({
             lessonsByModule, progress.completedLessons
         );
 
+        // Hoisted so it can be used after the transaction commits to trigger
+        // best-effort side-effects (email + certificate) only on FIRST completion.
+        let firstCompletion = false;
+
         if (progress.completionPercentage === 100) {
-            const firstCompletion = !progress.isCourseCompleted;
+            firstCompletion = !progress.isCourseCompleted;
             progress.isCourseCompleted = true;
             progress.completedAt ??= new Date();
             enrollment.status = ENROLLMENT_STATUS.COMPLETED;
@@ -284,6 +289,19 @@ export async function updateLessonProgress({
             moduleId: module._id,
             enrollmentId: enrollment._id,
         });
+
+        // Issue the certificate AFTER the transaction commits (best-effort),
+        // so the certificate service reliably sees the COMPLETED enrollment.
+        if (firstCompletion) {
+            try {
+                await certificateService.generateCertificate({
+                    enrollmentId: enrollment._id,
+                    studentId,
+                });
+            } catch (e) {
+                logger.warn("Certificate generation skipped.", { error: e.message, enrollmentId: enrollment._id });
+            }
+        }
 
         return progress;
     } catch (error) {

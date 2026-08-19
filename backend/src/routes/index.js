@@ -16,8 +16,7 @@ import progressRouter from "./progress.routes.js";
 import taskRouter from "./task.routes.js";
 import reviewRouter from "./review.routes.js";
 import notificationRouter from "./notification.routes.js";
-import announcementRouter from "./announcement.routes.js";
-import paymentRouter from "./payment.routes.js";
+import announcementRouter from "./announcement.routes.js";import certificateRouter from "./certificate.routes.js";import paymentRouter from "./payment.routes.js";
 import orderRouter from "./order.routes.js";
 import couponRouter from "./coupon.routes.js";
 import walletRouter from "./wallet.routes.js";
@@ -42,11 +41,13 @@ router.use("/uploads", uploadRouter);
 
 // ── Course content (relative-path routers) ────────────────────────────────
 
-// REVIEW + ANNOUNCEMENT routers register course-scoped routes under /courses
-// BEFORE courseRouter so their /courses/:courseId/reviews, .../rating and
-// .../announcements are not shadowed by courseRouter's use(authenticate) guard.
+// REVIEW + ANNOUNCEMENT + CERTIFICATE routers register course-scoped routes
+// under /courses BEFORE courseRouter so their /courses/:courseId/reviews,
+// .../rating, .../announcements and .../certificates are not shadowed by
+// courseRouter's use(authenticate) guard.
 router.use(reviewRouter);
 router.use(announcementRouter);
+router.use(certificateRouter);
 router.use("/courses", courseRouter);
 router.use("/categories", categoryRouter);
 router.use("/modules", moduleRouter);

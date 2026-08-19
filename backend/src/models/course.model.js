@@ -231,6 +231,16 @@ const courseSchema = new Schema(
       type: Date,
     },
 
+    // ── Discovery / Merchandising ────────────────────────
+
+    featured: {
+      type: Boolean,
+      default: false,
+      index: true,
+      // Admin/instructor flag: featured courses surface on the marketplace
+      // home ("Featured" rail) ahead of the general listing.
+    },
+
     // ── SEO ─────────────────────────────────────────────
 
     seo: seoSchema,
@@ -290,6 +300,7 @@ courseSchema.index({ instructor: 1, createdAt: -1 });
 courseSchema.index({ category: 1, status: 1 });
 courseSchema.index({ "statistics.averageRating": -1 });
 courseSchema.index({ tags: 1 });
+courseSchema.index({ featured: 1, status: 1, visibility: 1 });
 
 // Text index for full-text search across title, shortDescription, and description.
 courseSchema.index(

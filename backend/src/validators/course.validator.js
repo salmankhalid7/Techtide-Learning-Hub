@@ -1,6 +1,7 @@
 import { param, query } from "express-validator";
+import mongoose from "mongoose";
 
-import { COURSE_SORT_FIELDS } from "../constants/course.constants.js";
+import { COURSE_SORT_FIELDS, COURSE_LEVELS } from "../constants/course.constants.js";
 import {
   courseTitleRule,
   shortDescriptionRule,
@@ -65,4 +66,76 @@ export const validateCourseFilters = [
     .optional()
     .isIn(["asc", "desc"])
     .withMessage("SortOrder must be 'asc' or 'desc'."),
+
+  query("search")
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Search must be a string (max 200 chars)."),
+
+  query("category")
+    .optional()
+    .custom((v) => mongoose.Types.ObjectId.isValid(v))
+    .withMessage("Invalid category."),
+
+  query("level")
+    .optional()
+    .isIn(Object.values(COURSE_LEVELS))
+    .withMessage("Invalid level."),
+
+  // ── Advanced discovery filters (roadmap #8) ────────────
+
+  query("minPrice")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("minPrice must be a non-negative number."),
+
+  query("maxPrice")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("maxPrice must be a non-negative number."),
+
+  query("free")
+    .optional()
+    .isIn(["true", "false"])
+    .withMessage("free must be 'true' or 'false'."),
+
+  query("minRating")
+    .optional()
+    .isFloat({ min: 0, max: 5 })
+    .withMessage("minRating must be between 0 and 5."),
+
+  query("maxRating")
+    .optional()
+    .isFloat({ min: 0, max: 5 })
+    .withMessage("maxRating must be between 0 and 5."),
+
+  query("featured")
+    .optional()
+    .isIn(["true", "false"])
+    .withMessage("featured must be 'true' or 'false'."),
+
+  query("tags")
+    .optional()
+    .custom((v) => {
+      const arr = Array.isArray(v) ? v : [v];
+      return arr.every((t) => mongoose.Types.ObjectId.isValid(t));
+    })
+    .withMessage("tags must be valid ObjectIds (comma-separated or repeated)."),
+];
+
+/**
+ * Validates query params for the discovery rails
+ * (/courses/featured|popular|trending|recommended).
+ */
+export const validateDiscoveryRail = [
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 50 })
+    .withMessage("Limit must be between 1 and 50."),
+  query("days")
+    .optional()
+    .isInt({ min: 1, max: 365 })
+    .withMessage("Days must be between 1 and 365."),
 ];
